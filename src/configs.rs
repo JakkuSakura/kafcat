@@ -50,7 +50,7 @@ pub fn get_arg_matches() -> ArgMatches {
                 .requires_all(&["input-topic", "output-topic", "copy"])
                 .conflicts_with("topic"),
         )
-        .arg(Arg::new("num-workers").long("num-workers").about("Number of workers").takes_value(true).default_value("1"))
+        // .arg(Arg::new("num-workers").long("num-workers").about("Number of workers").takes_value(true).default_value("1"))
         .get_matches()
 }
 
@@ -106,25 +106,25 @@ impl FromStr for KafkaOffset {
     }
 }
 #[derive(Debug, Clone, Default)]
-pub struct Config {
+pub struct AppConfig {
     matches:          ArgMatches,
     pub group_id:     String,
     pub exit:         bool,
     pub offset:       KafkaOffset,
     pub mode:         WorkingMode,
     pub brokers:      String,
-    pub num_workers:  i32,
+    // pub num_workers:  i32,
     pub topic:        Option<String>,
     pub partition:    Option<i32>,
     pub input_topic:  Option<String>,
     pub output_topic: Option<String>,
 }
 
-impl From<ArgMatches> for Config {
+impl From<ArgMatches> for AppConfig {
     fn from(matches: ArgMatches) -> Self {
         let brokers = matches.value_of_t_or_exit("brokers");
         let group_id = matches.value_of("group-id").unwrap().into();
-        let num_workers = matches.value_of_t_or_exit("num-workers");
+        // let num_workers = matches.value_of_t_or_exit("num-workers");
 
         let mut working_mode = None;
         for mode in &[WorkingMode::Producer, WorkingMode::Consumer, WorkingMode::Metadata, WorkingMode::Query, WorkingMode::Copy] {
@@ -139,14 +139,14 @@ impl From<ArgMatches> for Config {
         let offset = matches.value_of("offset").map(|x| x.parse().expect("Cannot parse offset")).unwrap_or(KafkaOffset::Beginning);
         let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
         let exit = matches.occurrences_of("exit") > 0;
-        Config {
+        AppConfig {
             matches,
             group_id,
             exit,
             offset,
             mode: *working_mode.unwrap(),
             brokers,
-            num_workers,
+            // num_workers,
             topic,
             partition,
             input_topic,
@@ -162,34 +162,13 @@ pub struct KafkaConfig {
     pub partition: Option<i32>,
 }
 
-impl From<&Config> for KafkaConfig {
-    fn from(x: &Config) -> Self {
+impl From<&AppConfig> for KafkaConfig {
+    fn from(x: &AppConfig) -> Self {
         KafkaConfig {
             brokers:   x.brokers.clone(),
             group_id:  x.group_id.clone(),
             offset:    x.offset,
             partition: x.partition,
         }
-    }
-}
-impl Into<StreamConsumer> for KafkaConfig {
-    fn into(self) -> StreamConsumer {
-        ClientConfig::new()
-            .set("group.id", &self.group_id)
-            .set("bootstrap.servers", &self.brokers)
-            .set("enable.partition.eof", "false")
-            .set("session.timeout.ms", "6000")
-            .set("enable.auto.commit", "false")
-            .create()
-            .expect("Consumer creation failed")
-    }
-}
-impl Into<FutureProducer> for KafkaConfig {
-    fn into(self) -> FutureProducer {
-        ClientConfig::new()
-            .set("bootstrap.servers", &self.brokers)
-            .set("message.timeout.ms", "5000")
-            .create()
-            .expect("Producer creation error")
     }
 }

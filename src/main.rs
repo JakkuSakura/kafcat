@@ -11,119 +11,78 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use kafcat::configs::get_arg_matches;
-use kafcat::configs::Config;
+use kafcat::configs::AppConfig;
 use kafcat::configs::KafkaConfig;
 use kafcat::configs::KafkaOffset;
 use kafcat::configs::WorkingMode;
+use kafcat::kafka_interface::CustomConsumer;
+use kafcat::kafka_interface::CustomMessage;
+use kafcat::kafka_interface::KafkaInterface;
+use kafcat::rdkafka_impl::RdKafka;
 use kafcat::timeout_stream::TimeoutStreamExt;
 use log::info;
 use log::LevelFilter;
 use log::Record;
-use rdkafka::consumer::Consumer;
-use rdkafka::consumer::StreamConsumer;
-use rdkafka::error::KafkaResult;
-use rdkafka::message::OwnedMessage;
-use rdkafka::producer::FutureProducer;
-use rdkafka::producer::FutureRecord;
-use rdkafka::Message;
-use rdkafka::Offset;
-use rdkafka::TopicPartitionList;
 use std::io::Write;
+use std::sync::Arc;
 use tokio::task::spawn_blocking;
 
-fn process_message(msg: &OwnedMessage) {
-    println!("{:?}", msg);
+fn process_message<Msg: CustomMessage>(msg: Msg) {
+    println!("{:?}", msg.get_payload());
 }
 
-async fn get_topic_partition_list(consumer: StreamConsumer, topic: String, partition: Option<i32>, offset: KafkaOffset) -> KafkaResult<(StreamConsumer, TopicPartitionList)> {
-    info!("offset {:?}", offset);
-    let mut tpl = TopicPartitionList::new();
-    let partition = partition.unwrap_or(0);
-    let r: KafkaResult<_> = {
-        let topic = topic.clone();
-        spawn_blocking(move || {
-            let r = match offset {
-                KafkaOffset::Beginning => Offset::Beginning,
-                KafkaOffset::End => Offset::End,
-                KafkaOffset::Stored => Offset::Stored,
-                KafkaOffset::Offset(o) if o >= 0 => Offset::Offset(o as _),
-                KafkaOffset::Offset(o) => Offset::OffsetTail((-o - 1) as _),
-                KafkaOffset::OffsetInterval(b, _) => Offset::Offset(b as _),
-                KafkaOffset::TimeInterval(b, _e) => {
-                    let mut tpl_b = TopicPartitionList::new();
-                    tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
-                    tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
-                    tpl_b.find_partition(&topic, partition).unwrap().offset()
-                },
-            };
-            Ok((consumer, r))
-        })
-        .await
-        .unwrap()
-    };
-    let (consumer, offset) = r?;
-    tpl.add_partition_offset(&topic, partition, offset).unwrap();
-    Ok((consumer, tpl))
-}
-
-async fn run_async_copy_topic(consumer_config: KafkaConfig, producer_config: KafkaConfig, input_topic: &str, output_topic: &str) {
+async fn run_async_copy_topic<Interface: KafkaInterface>(interface: Interface, consumer_config: KafkaConfig, producer_config: KafkaConfig, input_topic: &str, output_topic: &str) {
     // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let consumer: StreamConsumer = consumer_config.clone().into();
-    let (consumer, tpl) = get_topic_partition_list(consumer, input_topic.to_owned(), consumer_config.partition, consumer_config.offset)
-        .await
-        .unwrap();
-    consumer.assign(&tpl).unwrap();
-
-    // Create the `FutureProducer` to produce asynchronously.
-    let producer: FutureProducer = producer_config.into();
-
-    // Create the outer pipeline on the message stream.
-    let stream_processor = consumer.stream().try_for_each(|borrowed_message| {
-        let producer = producer.clone();
-        let output_topic = output_topic.to_string();
-        async move {
-            let owned_message = borrowed_message.detach();
-            tokio::spawn(async move {
-                let mut record = FutureRecord::to(&output_topic);
-                if let Some(key) = owned_message.key() {
-                    record = record.key(key);
-                }
-                if let Some(payload) = owned_message.payload() {
-                    record = record.payload(payload)
-                }
-
-                let produce_future = producer.send(record, Duration::from_secs(0));
-                match produce_future.await {
-                    Ok(delivery) => println!("Sent: {:?}", delivery),
-                    Err((e, _)) => println!("Error: {:?}", e),
-                }
-            });
-            Ok(())
-        }
-    });
-
-    info!("Starting event loop");
-    stream_processor.await.expect("stream processing failed");
-    info!("Stream processing terminated");
+    let consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config, input_topic, interface.get_config().partition);
+    unimplemented!();
+    // // Create the `FutureProducer` to produce asynchronously.
+    // let producer: FutureProducer = producer_config.into();
+    //
+    // // Create the outer pipeline on the message stream.
+    // let stream_processor = consumer.stream().try_for_each(|borrowed_message| {
+    //     let producer = producer.clone();
+    //     let output_topic = output_topic.to_string();
+    //     async move {
+    //         let owned_message = borrowed_message.detach();
+    //         tokio::spawn(async move {
+    //             let mut record = FutureRecord::to(&output_topic);
+    //             if let Some(key) = owned_message.key() {
+    //                 record = record.key(key);
+    //             }
+    //             if let Some(payload) = owned_message.payload() {
+    //                 record = record.payload(payload)
+    //             }
+    //
+    //             let produce_future = producer.send(record, Duration::from_secs(0));
+    //             match produce_future.await {
+    //                 Ok(delivery) => println!("Sent: {:?}", delivery),
+    //                 Err((e, _)) => println!("Error: {:?}", e),
+    //             }
+    //         });
+    //         Ok(())
+    //     }
+    // });
+    //
+    // info!("Starting event loop");
+    // stream_processor.await.expect("stream processing failed");
+    // info!("Stream processing terminated");
 }
 
-async fn run_async_consume_topic(config: &Config, consumer_conf: KafkaConfig, topic: &str) {
-    let consumer: StreamConsumer = consumer_conf.clone().into();
-    let (consumer, tpl) = get_topic_partition_list(consumer, topic.to_owned(), consumer_conf.partition, consumer_conf.offset).await.unwrap();
-    consumer.assign(&tpl).unwrap();
-
+async fn run_async_consume_topic<Interface: KafkaInterface>(interface: Interface, config: &AppConfig, consumer_config: KafkaConfig, topic: &str) {
+    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
+    let mut consumer: Arc<Interface::Consumer> = Arc::new(Interface::Consumer::from_config(
+        interface.get_config(),
+        consumer_config.clone(),
+        topic,
+        interface.get_config().partition,
+    ));
+    consumer = consumer.set_offset(&topic, consumer_config.partition, consumer_config.offset).await.unwrap();
     consumer
-        .stream()
-        .timeout(if config.exit { Duration::from_secs(3) } else { Duration::from_secs(3600) })
-        .try_for_each(|borrowed_message| {
-            let owned_message = borrowed_message.detach();
-            async move {
-                process_message(&owned_message);
-                Ok(())
-            }
+        .for_each(|x| async {
+            process_message(x);
+            Ok(())
         })
-        .await
-        .unwrap();
+        .await;
 }
 
 pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
@@ -151,40 +110,27 @@ pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
 async fn main() {
     let matches = get_arg_matches();
     setup_logger(true, matches.value_of("log-conf"));
-    let config = Box::leak(Box::new(Config::from(matches))) as &Config;
+    let config = Box::leak(Box::new(AppConfig::from(matches))) as &AppConfig;
 
     info!("Starting {:?}", config.mode);
 
+    let interface = RdKafka::from_config(config.clone());
     match config.mode {
         WorkingMode::Consumer => {
-            (0..config.num_workers)
-                .map(|_| {
-                    tokio::spawn(run_async_consume_topic(
-                        config,
-                        config.into(),
-                        config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic"),
-                    ))
-                })
-                .collect::<FuturesUnordered<_>>()
-                .for_each(|_| async { () })
-                .await
+            run_async_consume_topic(interface, config, config.into(), config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic")).await;
         },
         WorkingMode::Producer => {},
         WorkingMode::Metadata => {},
         WorkingMode::Query => {},
         WorkingMode::Copy => {
-            (0..config.num_workers)
-                .map(|_| {
-                    tokio::spawn(run_async_copy_topic(
-                        config.into(),
-                        config.into(),
-                        config.input_topic.as_ref().expect("Must use input_topic"),
-                        config.input_topic.as_ref().expect("Must use output_topic"),
-                    ))
-                })
-                .collect::<FuturesUnordered<_>>()
-                .for_each(|_| async { () })
-                .await
+            run_async_copy_topic(
+                interface,
+                config.into(),
+                config.into(),
+                config.input_topic.as_ref().expect("Must use input_topic"),
+                config.input_topic.as_ref().expect("Must use output_topic"),
+            )
+            .await;
         },
         _ => {},
     }

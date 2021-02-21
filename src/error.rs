@@ -1,3 +1,4 @@
+use rdkafka::error::KafkaError;
 use std::fmt::Debug;
 use thiserror::Error;
 

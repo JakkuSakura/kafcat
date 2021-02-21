@@ -45,10 +45,7 @@ impl<T> TimeoutStream<T> {
 #[derive(Debug, PartialEq)]
 pub struct Elapsed;
 
-impl<T> Stream for TimeoutStream<T>
-where
-    T: Stream,
-{
+impl<T: Stream> Stream for TimeoutStream<T> {
     type Item = T::Item;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -66,3 +63,25 @@ where
         }
     }
 }
+
+// impl<T> Future for TimeoutStream<T>
+// where
+//     T: Future,
+// {
+//     type Output = Result<T::Output, Elapsed>;
+//
+//     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+//         let me = self.project();
+//
+//         // First, try polling the future
+//         if let Poll::Ready(v) = me.value.poll(cx) {
+//             return Poll::Ready(Ok(v));
+//         }
+//
+//         // Now check the timer
+//         match me.delay.poll(cx) {
+//             Poll::Ready(()) => Poll::Ready(Err(Elapsed)),
+//             Poll::Pending => Poll::Pending,
+//         }
+//     }
+// }
