@@ -70,6 +70,7 @@ pub enum KafkaOffset {
     End,
     Stored,
     Offset(isize),
+    OffsetInterval(i64, i64),
     TimeInterval(i64, i64),
 }
 

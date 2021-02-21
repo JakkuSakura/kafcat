@@ -21,6 +21,7 @@ use log::LevelFilter;
 use log::Record;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
+use rdkafka::error::KafkaResult;
 use rdkafka::message::OwnedMessage;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
@@ -28,33 +29,49 @@ use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
 use std::io::Write;
+use tokio::task::spawn_blocking;
 
 fn process_message(msg: &OwnedMessage) {
     println!("{:?}", msg);
 }
 
-fn get_topic_partition_list(topic: &str, partition: Option<i32>, offset: KafkaOffset) -> TopicPartitionList {
+async fn get_topic_partition_list(consumer: StreamConsumer, topic: String, partition: Option<i32>, offset: KafkaOffset) -> KafkaResult<(StreamConsumer, TopicPartitionList)> {
     info!("offset {:?}", offset);
     let mut tpl = TopicPartitionList::new();
-
-    let offset = match offset {
-        KafkaOffset::Beginning => Offset::Beginning,
-        KafkaOffset::End => Offset::End,
-        KafkaOffset::Stored => Offset::Stored,
-        KafkaOffset::Offset(o) if o >= 0 => Offset::Offset(o as _),
-        KafkaOffset::Offset(o) => Offset::OffsetTail(o as _),
-        KafkaOffset::TimeInterval(_, _) => {
-            unimplemented!("KafkaOffset::TimeInterval")
-        },
+    let partition = partition.unwrap_or(0);
+    let r: KafkaResult<_> = {
+        let topic = topic.clone();
+        spawn_blocking(move || {
+            let r = match offset {
+                KafkaOffset::Beginning => Offset::Beginning,
+                KafkaOffset::End => Offset::End,
+                KafkaOffset::Stored => Offset::Stored,
+                KafkaOffset::Offset(o) if o >= 0 => Offset::Offset(o as _),
+                KafkaOffset::Offset(o) => Offset::OffsetTail((-o - 1) as _),
+                KafkaOffset::OffsetInterval(b, _) => Offset::Offset(b as _),
+                KafkaOffset::TimeInterval(b, _e) => {
+                    let mut tpl_b = TopicPartitionList::new();
+                    tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
+                    tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
+                    tpl_b.find_partition(&topic, partition).unwrap().offset()
+                },
+            };
+            Ok((consumer, r))
+        })
+        .await
+        .unwrap()
     };
-    tpl.add_partition_offset(topic, partition.unwrap_or(0), offset).unwrap();
-    tpl
+    let (consumer, offset) = r?;
+    tpl.add_partition_offset(&topic, partition, offset).unwrap();
+    Ok((consumer, tpl))
 }
 
 async fn run_async_copy_topic(consumer_config: KafkaConfig, producer_config: KafkaConfig, input_topic: &str, output_topic: &str) {
     // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let tpl = get_topic_partition_list(input_topic, consumer_config.partition, consumer_config.offset);
-    let consumer: StreamConsumer = consumer_config.into();
+    let consumer: StreamConsumer = consumer_config.clone().into();
+    let (consumer, tpl) = get_topic_partition_list(consumer, input_topic.to_owned(), consumer_config.partition, consumer_config.offset)
+        .await
+        .unwrap();
     consumer.assign(&tpl).unwrap();
 
     // Create the `FutureProducer` to produce asynchronously.
@@ -90,14 +107,14 @@ async fn run_async_copy_topic(consumer_config: KafkaConfig, producer_config: Kaf
     info!("Stream processing terminated");
 }
 
-async fn run_async_consume_topic(config: &Config, consumer: KafkaConfig, topic: &str) {
-    let consumer: StreamConsumer = consumer.into();
-
-    consumer.subscribe(&[&topic]).expect("Can't subscribe to specified topic");
+async fn run_async_consume_topic(config: &Config, consumer_conf: KafkaConfig, topic: &str) {
+    let consumer: StreamConsumer = consumer_conf.clone().into();
+    let (consumer, tpl) = get_topic_partition_list(consumer, topic.to_owned(), consumer_conf.partition, consumer_conf.offset).await.unwrap();
+    consumer.assign(&tpl).unwrap();
 
     consumer
         .stream()
-        .timeout(if config.exit { Duration::from_millis(500) } else { Duration::from_secs(10) })
+        .timeout(if config.exit { Duration::from_secs(3) } else { Duration::from_secs(3600) })
         .try_for_each(|borrowed_message| {
             let owned_message = borrowed_message.detach();
             async move {
