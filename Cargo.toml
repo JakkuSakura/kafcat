@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 rdkafka = "0.25.0"
 kafka = "0.8.0"
-clap = "3.0.0-beta.2"
+clap = { git = "https://github.com/clap-rs/clap" } # for https://github.com/clap-rs/clap/issues/2022
 log = "0.4.14"
 env_logger = "0.8.3"
 tokio = { version = "1.2.0", features = ["full"] }
@@ -22,4 +22,5 @@ backoff = "0.1.5"
 chrono = "0.4.0"
 rand = "0.3.15"
 regex = "1.1.6"
+lazy_static = "*"
 
