@@ -3,26 +3,27 @@ use clap::App;
 use clap::Arg;
 use clap::ArgGroup;
 use clap::ArgMatches;
-use rdkafka::consumer::StreamConsumer;
-use rdkafka::producer::FutureProducer;
-use rdkafka::ClientConfig;
 use strum::Display;
 use strum::EnumString;
 
 pub fn get_arg_matches() -> ArgMatches {
-    App::new("kafcat")
-        .version(crate_version!())
-        .author("Jiangkun Qiu <qiujiangkun@foxmail.com>")
-        .about("cat but kafka")
-        .help_heading("MODE")
+    let mut app = App::new("kafcat").version(crate_version!()).author("Jiangkun Qiu <qiujiangkun@foxmail.com>").about("cat but kafka");
+    #[cfg(features = "help_heading")]
+    {
+        app = app.help_heading("MODE");
+    }
+    app = app
         .arg(Arg::new("consumer").short('C').about("use Consumer mode").group("mode"))
         .arg(Arg::new("producer").short('P').about("use Producer mode").group("mode"))
         .arg(Arg::new("metadata").short('L').about("use Metadata mode").group("mode"))
         .arg(Arg::new("query").short('Q').about("use Query mode").group("mode"))
         .arg(Arg::new("copy").long("cp").about("use Copy mode").group("mode"))
-        .group(ArgGroup::new("mode").required(true).args(&["consumer", "producer", "metadata", "query"]))
-        .help_heading("OPTIONS")
-        .arg(Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092"))
+        .group(ArgGroup::new("mode").required(true).args(&["consumer", "producer", "metadata", "query"]));
+    #[cfg(features = "help_heading")]
+    {
+        app = app.help_heading("OPTIONS");
+    }
+    app.arg(Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092"))
         .arg(
             Arg::new("group-id")
                 .short('G')

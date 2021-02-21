@@ -3,9 +3,7 @@ use crate::configs::KafkaConfig;
 use crate::configs::KafkaOffset;
 use crate::error::KafcatError;
 use async_trait::async_trait;
-use futures::Stream;
 use futures::TryFuture;
-use rdkafka::error::KafkaError;
 use std::sync::Arc;
 
 #[async_trait]

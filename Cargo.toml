@@ -9,11 +9,12 @@ edition = "2018"
 [dependencies]
 rdkafka = "0.25.0"
 kafka = "0.8.0"
-clap = { git = "https://github.com/clap-rs/clap" } # for https://github.com/clap-rs/clap/issues/2022
+#clap = { git = "https://github.com/clap-rs/clap", rev = "1602b103" } # for https://github.com/clap-rs/clap/issues/2022
+clap = "3.0.0-beta.2" #  wait for 3.0.0
 log = "0.4.14"
 env_logger = "0.8.3"
 tokio = { version = "1", features = ["full"] }
-futures = "*"
+futures = "0.3.12"
 serde = { version = "1.0.0", features = ["derive"] }
 serde_derive = "1.0.0"
 serde_json = "1.0.0"
@@ -22,10 +23,12 @@ backoff = "0.1.5"
 chrono = "0.4.0"
 rand = "0.3.15"
 regex = "1.1.6"
-lazy_static = "*"
+lazy_static = "1.4.0"
 strum = { version = "0.20", features = ["derive"] }
-pin-project-lite = "*"
-async-trait = "*"
-anyhow = "*"
-thiserror = "*"
+pin-project-lite = "0.2.4"
+async-trait = "0.1.42"
+anyhow = "1.0.38"
+thiserror = "1.0.24"
 
+[features]
+help_heading = [] # clap #2022

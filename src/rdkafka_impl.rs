@@ -6,39 +6,21 @@ use crate::kafka_interface::CustomConsumer;
 use crate::kafka_interface::CustomMessage;
 use crate::kafka_interface::CustomProducer;
 use crate::kafka_interface::KafkaInterface;
-use crate::timeout_stream::TimeoutStream;
 use crate::timeout_stream::TimeoutStreamExt;
-use async_trait::async_trait;
-use futures::stream::TryForEach;
-use futures::FutureExt;
-use futures::Stream;
-use futures::StreamExt;
 use futures::TryFuture;
-use futures::TryFutureExt;
 use futures::TryStreamExt;
-use log::*;
 use rdkafka::consumer::Consumer;
-use rdkafka::consumer::DefaultConsumerContext;
-use rdkafka::consumer::MessageStream;
 use rdkafka::consumer::StreamConsumer;
-use rdkafka::error::KafkaError;
 use rdkafka::error::KafkaResult;
-use rdkafka::message::BorrowedMessage;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
-use rdkafka::util::DefaultRuntime;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::Context;
-use std::task::Poll;
-use std::thread::spawn;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::sync::OwnedMutexGuard;
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
 
@@ -70,7 +52,7 @@ pub struct RdkafkaConsumer {
 impl CustomConsumer for RdkafkaConsumer {
     type Message = RdkafkaMessage;
 
-    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str, partition: Option<i32>) -> Self
+    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, _topic: &str, _partition: Option<i32>) -> Self
     where
         Self: Sized,
     {
@@ -120,7 +102,7 @@ impl CustomConsumer for RdkafkaConsumer {
         };
 
         tpl.add_partition_offset(&topic, partition, offset).unwrap();
-        self.stream.lock().await.assign(&tpl);
+        self.stream.lock().await.assign(&tpl).map_err(|x| anyhow::Error::from(x))?;
         Ok(())
     }
 
@@ -132,7 +114,6 @@ impl CustomConsumer for RdkafkaConsumer {
         let config = Arc::clone(&self.config);
         let stream = Arc::clone(&self.stream).lock_owned().await;
         let handler = stream.stream().timeout(if config.exit { Duration::from_secs(3) } else { Duration::from_secs(3600) });
-
         let handler = handler.map_err(|x| anyhow::Error::from(x).into()).try_for_each(|x| {
             let msg = x.detach();
             let msg = RdkafkaMessage {
@@ -147,7 +128,7 @@ impl CustomConsumer for RdkafkaConsumer {
 }
 
 pub struct RdkafkaProducer {
-    config:   Arc<AppConfig>,
+    _config:  Arc<AppConfig>,
     producer: FutureProducer,
     topic:    String,
 }
@@ -166,7 +147,7 @@ impl CustomProducer for RdkafkaProducer {
             .create()
             .expect("Producer creation error");
         RdkafkaProducer {
-            config,
+            _config: config,
             producer,
             topic: topic.to_owned(),
         }
@@ -182,7 +163,7 @@ impl CustomProducer for RdkafkaProducer {
         if payload.len() > 0 {
             record = record.payload(payload)
         }
-        self.producer.send(record, Duration::from_secs(0)).await.map_err(|(err, msg)| anyhow::Error::from(err))?;
+        self.producer.send(record, Duration::from_secs(0)).await.map_err(|(err, _msg)| anyhow::Error::from(err))?;
         Ok(())
     }
 }

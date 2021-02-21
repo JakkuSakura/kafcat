@@ -7,3 +7,9 @@ pub mod kafka_interface;
 pub mod output;
 pub mod rdkafka_impl;
 pub mod timeout_stream;
+
+#[macro_use]
+extern crate async_trait;
+
+#[macro_use]
+extern crate log;
