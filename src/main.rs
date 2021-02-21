@@ -186,5 +186,6 @@ async fn main() {
                 .for_each(|_| async { () })
                 .await
         },
+        _ => {},
     }
 }

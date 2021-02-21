@@ -25,5 +25,7 @@ regex = "1.1.6"
 lazy_static = "*"
 strum = { version = "0.20", features = ["derive"] }
 pin-project-lite = "*"
-
+async-trait = "*"
+anyhow = "*"
+thiserror = "*"
 

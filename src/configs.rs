@@ -57,13 +57,16 @@ pub fn get_arg_matches() -> ArgMatches {
 #[derive(Debug, Copy, Clone, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum WorkingMode {
+    Unspecified,
     Consumer,
     Producer,
     Metadata,
     Query,
     Copy,
 }
-
+impl Default for WorkingMode {
+    fn default() -> Self { Self::Unspecified }
+}
 #[derive(Debug, Clone, Copy)]
 pub enum KafkaOffset {
     Beginning,
@@ -72,6 +75,9 @@ pub enum KafkaOffset {
     Offset(isize),
     OffsetInterval(i64, i64),
     TimeInterval(i64, i64),
+}
+impl Default for KafkaOffset {
+    fn default() -> Self { Self::Beginning }
 }
 
 use regex::Regex;
@@ -99,7 +105,7 @@ impl FromStr for KafkaOffset {
         })
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     matches:          ArgMatches,
     pub group_id:     String,
