@@ -1,47 +1,64 @@
-#![allow(non_upper_case_globals)]
 #![deny(unsafe_code)]
 
 use std::thread;
 use std::time::Duration;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use futures::TryStreamExt;
-use log::info;
-use log::LevelFilter;
-use log::Record;
-use rdkafka::message::OwnedMessage;
-use rdkafka::producer::FutureProducer;
-use rdkafka::producer::FutureRecord;
-use rdkafka::Message;
-use std::io::Write;
-
 use chrono::DateTime;
 use chrono::Local;
 use env_logger::fmt::Formatter;
 use env_logger::Builder;
-
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use futures::TryStreamExt;
 use kafcat::configs::get_arg_matches;
 use kafcat::configs::Config;
 use kafcat::configs::KafkaConfig;
+use kafcat::configs::KafkaOffset;
 use kafcat::configs::WorkingMode;
-use lazy_static::lazy_static;
+use kafcat::timeout_stream::TimeoutStreamExt;
+use log::info;
+use log::LevelFilter;
+use log::Record;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
-use std::sync::Arc;
+use rdkafka::message::OwnedMessage;
+use rdkafka::producer::FutureProducer;
+use rdkafka::producer::FutureRecord;
+use rdkafka::Message;
+use rdkafka::Offset;
+use rdkafka::TopicPartitionList;
+use std::io::Write;
 
-async fn record_owned_message_receipt(msg: &OwnedMessage) {
+fn process_message(msg: &OwnedMessage) {
     println!("{:?}", msg);
 }
 
-async fn run_async_copy_topic(consumer: KafkaConfig, producer: KafkaConfig, input_topic: &str, output_topic: &str) {
-    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let consumer: StreamConsumer = consumer.into();
+fn get_topic_partition_list(topic: &str, partition: Option<i32>, offset: KafkaOffset) -> TopicPartitionList {
+    info!("offset {:?}", offset);
+    let mut tpl = TopicPartitionList::new();
 
-    consumer.subscribe(&[&input_topic]).expect("Can't subscribe to specified topic");
+    let offset = match offset {
+        KafkaOffset::Beginning => Offset::Beginning,
+        KafkaOffset::End => Offset::End,
+        KafkaOffset::Stored => Offset::Stored,
+        KafkaOffset::Offset(o) if o >= 0 => Offset::Offset(o as _),
+        KafkaOffset::Offset(o) => Offset::OffsetTail(o as _),
+        KafkaOffset::TimeInterval(_, _) => {
+            unimplemented!("KafkaOffset::TimeInterval")
+        },
+    };
+    tpl.add_partition_offset(topic, partition.unwrap_or(0), offset).unwrap();
+    tpl
+}
+
+async fn run_async_copy_topic(consumer_config: KafkaConfig, producer_config: KafkaConfig, input_topic: &str, output_topic: &str) {
+    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
+    let tpl = get_topic_partition_list(input_topic, consumer_config.partition, consumer_config.offset);
+    let consumer: StreamConsumer = consumer_config.into();
+    consumer.assign(&tpl).unwrap();
 
     // Create the `FutureProducer` to produce asynchronously.
-    let producer: FutureProducer = producer.into();
+    let producer: FutureProducer = producer_config.into();
 
     // Create the outer pipeline on the message stream.
     let stream_processor = consumer.stream().try_for_each(|borrowed_message| {
@@ -73,23 +90,23 @@ async fn run_async_copy_topic(consumer: KafkaConfig, producer: KafkaConfig, inpu
     info!("Stream processing terminated");
 }
 
-async fn run_async_consume_topic(consumer: KafkaConfig, topic: &str) {
-    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
+async fn run_async_consume_topic(config: &Config, consumer: KafkaConfig, topic: &str) {
     let consumer: StreamConsumer = consumer.into();
 
     consumer.subscribe(&[&topic]).expect("Can't subscribe to specified topic");
 
-    // Create the outer pipeline on the message stream.
-    let stream_processor = consumer.stream().try_for_each(|borrowed_message| async move {
-        let owned_message = borrowed_message.detach();
-        record_owned_message_receipt(&owned_message).await;
-
-        Ok(())
-    });
-
-    info!("Starting event loop");
-    stream_processor.await.expect("stream processing failed");
-    info!("Stream processing terminated");
+    consumer
+        .stream()
+        .timeout(if config.exit { Duration::from_millis(500) } else { Duration::from_secs(10) })
+        .try_for_each(|borrowed_message| {
+            let owned_message = borrowed_message.detach();
+            async move {
+                process_message(&owned_message);
+                Ok(())
+            }
+        })
+        .await
+        .unwrap();
 }
 
 pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
@@ -113,22 +130,21 @@ pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
     builder.init();
 }
 
-lazy_static! {
-    static ref config: Arc<Config> = {
-        let matches = get_arg_matches();
-        setup_logger(true, matches.value_of("log-conf"));
-        Arc::new(Config::from(matches))
-    };
-}
-
 #[tokio::main]
 async fn main() {
+    let matches = get_arg_matches();
+    setup_logger(true, matches.value_of("log-conf"));
+    let config = Box::leak(Box::new(Config::from(matches))) as &Config;
+
+    info!("Starting {:?}", config.mode);
+
     match config.mode {
         WorkingMode::Consumer => {
             (0..config.num_workers)
                 .map(|_| {
                     tokio::spawn(run_async_consume_topic(
-                        config.as_ref().into(),
+                        config,
+                        config.into(),
                         config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic"),
                     ))
                 })
@@ -143,8 +159,8 @@ async fn main() {
             (0..config.num_workers)
                 .map(|_| {
                     tokio::spawn(run_async_copy_topic(
-                        config.as_ref().into(),
-                        config.as_ref().into(),
+                        config.into(),
+                        config.into(),
                         config.input_topic.as_ref().expect("Must use input_topic"),
                         config.input_topic.as_ref().expect("Must use output_topic"),
                     ))

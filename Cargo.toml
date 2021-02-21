@@ -12,8 +12,8 @@ kafka = "0.8.0"
 clap = { git = "https://github.com/clap-rs/clap" } # for https://github.com/clap-rs/clap/issues/2022
 log = "0.4.14"
 env_logger = "0.8.3"
-tokio = { version = "1.2.0", features = ["full"] }
-futures = "0.3.0"
+tokio = { version = "1", features = ["full"] }
+futures = "*"
 serde = { version = "1.0.0", features = ["derive"] }
 serde_derive = "1.0.0"
 serde_json = "1.0.0"
@@ -23,4 +23,7 @@ chrono = "0.4.0"
 rand = "0.3.15"
 regex = "1.1.6"
 lazy_static = "*"
+strum = { version = "0.20", features = ["derive"] }
+pin-project-lite = "*"
+
 
