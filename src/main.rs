@@ -15,8 +15,10 @@ use kafcat::configs::AppConfig;
 use kafcat::configs::KafkaConfig;
 use kafcat::configs::KafkaOffset;
 use kafcat::configs::WorkingMode;
+use kafcat::error::KafcatError;
 use kafcat::kafka_interface::CustomConsumer;
 use kafcat::kafka_interface::CustomMessage;
+use kafcat::kafka_interface::CustomProducer;
 use kafcat::kafka_interface::KafkaInterface;
 use kafcat::rdkafka_impl::RdKafka;
 use kafcat::timeout_stream::TimeoutStreamExt;
@@ -27,62 +29,42 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::task::spawn_blocking;
 
-fn process_message<Msg: CustomMessage>(msg: Msg) {
+async fn process_message<Msg: CustomMessage>(msg: &Msg) {
     println!("{:?}", msg.get_payload());
 }
 
-async fn run_async_copy_topic<Interface: KafkaInterface>(interface: Interface, consumer_config: KafkaConfig, producer_config: KafkaConfig, input_topic: &str, output_topic: &str) {
+async fn run_async_copy_topic<Interface: KafkaInterface>(
+    interface: Interface,
+    consumer_config: KafkaConfig,
+    producer_config: KafkaConfig,
+    input_topic: &str,
+    output_topic: &str,
+) -> Result<(), KafcatError> {
     // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config, input_topic, interface.get_config().partition);
-    unimplemented!();
-    // // Create the `FutureProducer` to produce asynchronously.
-    // let producer: FutureProducer = producer_config.into();
-    //
-    // // Create the outer pipeline on the message stream.
-    // let stream_processor = consumer.stream().try_for_each(|borrowed_message| {
-    //     let producer = producer.clone();
-    //     let output_topic = output_topic.to_string();
-    //     async move {
-    //         let owned_message = borrowed_message.detach();
-    //         tokio::spawn(async move {
-    //             let mut record = FutureRecord::to(&output_topic);
-    //             if let Some(key) = owned_message.key() {
-    //                 record = record.key(key);
-    //             }
-    //             if let Some(payload) = owned_message.payload() {
-    //                 record = record.payload(payload)
-    //             }
-    //
-    //             let produce_future = producer.send(record, Duration::from_secs(0));
-    //             match produce_future.await {
-    //                 Ok(delivery) => println!("Sent: {:?}", delivery),
-    //                 Err((e, _)) => println!("Error: {:?}", e),
-    //             }
-    //         });
-    //         Ok(())
-    //     }
-    // });
-    //
-    // info!("Starting event loop");
-    // stream_processor.await.expect("stream processing failed");
-    // info!("Stream processing terminated");
-}
+    let mut consumer: Interface::Consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config.clone(), input_topic, interface.get_config().partition);
+    consumer.set_offset(&input_topic, consumer_config.partition, consumer_config.offset).await?;
 
-async fn run_async_consume_topic<Interface: KafkaInterface>(interface: Interface, config: &AppConfig, consumer_config: KafkaConfig, topic: &str) {
-    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let mut consumer: Arc<Interface::Consumer> = Arc::new(Interface::Consumer::from_config(
-        interface.get_config(),
-        consumer_config.clone(),
-        topic,
-        interface.get_config().partition,
-    ));
-    consumer = consumer.set_offset(&topic, consumer_config.partition, consumer_config.offset).await.unwrap();
+    let mut producer: Interface::Producer = Interface::Producer::from_config(interface.get_config(), consumer_config.clone(), output_topic);
     consumer
         .for_each(|x| async {
-            process_message(x);
+            process_message(&x).await; // TODO
+            producer.write_one(x).await?;
             Ok(())
         })
-        .await;
+        .await
+}
+
+async fn run_async_consume_topic<Interface: KafkaInterface>(interface: Interface, config: &AppConfig, consumer_config: KafkaConfig, topic: &str) -> Result<(), KafcatError> {
+    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
+    let mut consumer: Interface::Consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config.clone(), topic, interface.get_config().partition);
+    consumer.set_offset(&topic, consumer_config.partition, consumer_config.offset).await?;
+    consumer
+        .for_each(|x| async {
+            process_message(&x).await;
+            drop(x);
+            Ok(())
+        })
+        .await
 }
 
 pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
@@ -107,7 +89,7 @@ pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), KafcatError> {
     let matches = get_arg_matches();
     setup_logger(true, matches.value_of("log-conf"));
     let config = Box::leak(Box::new(AppConfig::from(matches))) as &AppConfig;
@@ -116,9 +98,7 @@ async fn main() {
 
     let interface = RdKafka::from_config(config.clone());
     match config.mode {
-        WorkingMode::Consumer => {
-            run_async_consume_topic(interface, config, config.into(), config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic")).await;
-        },
+        WorkingMode::Consumer => run_async_consume_topic(interface, config, config.into(), config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic")).await?,
         WorkingMode::Producer => {},
         WorkingMode::Metadata => {},
         WorkingMode::Query => {},
@@ -130,8 +110,9 @@ async fn main() {
                 config.input_topic.as_ref().expect("Must use input_topic"),
                 config.input_topic.as_ref().expect("Must use output_topic"),
             )
-            .await;
+            .await?
         },
         _ => {},
     }
+    Ok(())
 }

@@ -20,30 +20,30 @@ pub trait KafkaInterface {
 }
 
 #[async_trait]
-pub trait CustomConsumer {
+pub trait CustomConsumer: Send + Sync {
     type Message;
     fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str, partition: Option<i32>) -> Self
     where
         Self: Sized;
 
-    async fn set_offset(self: Arc<Self>, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<Arc<Self>, KafcatError>;
+    async fn set_offset(&self, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<(), KafcatError>;
 
-    async fn for_each<Fut, F>(self: Arc<Self>, mut func: F) -> Result<(), KafcatError>
+    async fn for_each<Fut, F>(&self, mut func: F) -> Result<(), KafcatError>
     where
         F: FnMut(Self::Message) -> Fut + Send,
         Fut: TryFuture<Ok = (), Error = KafcatError> + Send;
 }
 
 #[async_trait]
-pub trait CustomProducer {
+pub trait CustomProducer: Send + Sync {
     type Message;
     fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str) -> Self
     where
         Self: Sized;
-    async fn write_one(self: Arc<Self>, msg: Self::Message) -> Result<(), KafcatError>;
+    async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError>;
 }
 
-pub trait CustomMessage: Send {
+pub trait CustomMessage: Send + Sync {
     fn get_key(&self) -> &[u8];
     fn get_payload(&self) -> &[u8];
     fn get_timestamp(&self) -> i64;

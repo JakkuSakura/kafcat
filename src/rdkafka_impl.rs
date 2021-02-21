@@ -25,6 +25,7 @@ use rdkafka::error::KafkaError;
 use rdkafka::error::KafkaResult;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::producer::FutureProducer;
+use rdkafka::producer::FutureRecord;
 use rdkafka::util::DefaultRuntime;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
@@ -88,7 +89,7 @@ impl CustomConsumer for RdkafkaConsumer {
         }
     }
 
-    async fn set_offset(self: Arc<Self>, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<Arc<Self>, KafcatError> {
+    async fn set_offset(&self, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<(), KafcatError> {
         info!("offset {:?}", offset);
         let mut tpl = TopicPartitionList::new();
         let partition = partition.unwrap_or(0);
@@ -120,10 +121,10 @@ impl CustomConsumer for RdkafkaConsumer {
 
         tpl.add_partition_offset(&topic, partition, offset).unwrap();
         self.stream.lock().await.assign(&tpl);
-        Ok(self)
+        Ok(())
     }
 
-    async fn for_each<Fut, F>(self: Arc<Self>, mut func: F) -> Result<(), KafcatError>
+    async fn for_each<Fut, F>(&self, mut func: F) -> Result<(), KafcatError>
     where
         F: FnMut(Self::Message) -> Fut + Send,
         Fut: TryFuture<Ok = (), Error = KafcatError> + Send,
@@ -146,7 +147,9 @@ impl CustomConsumer for RdkafkaConsumer {
 }
 
 pub struct RdkafkaProducer {
+    config:   Arc<AppConfig>,
     producer: FutureProducer,
+    topic:    String,
 }
 
 #[async_trait]
@@ -162,10 +165,26 @@ impl CustomProducer for RdkafkaProducer {
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error");
-        RdkafkaProducer { producer }
+        RdkafkaProducer {
+            config,
+            producer,
+            topic: topic.to_owned(),
+        }
     }
 
-    async fn write_one(self: Arc<Self>, msg: Self::Message) -> Result<(), KafcatError> { unimplemented!() }
+    async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError> {
+        let mut record = FutureRecord::to(&self.topic);
+        let key = msg.get_key();
+        if key.len() > 0 {
+            record = record.key(key);
+        }
+        let payload = msg.get_payload();
+        if payload.len() > 0 {
+            record = record.payload(payload)
+        }
+        self.producer.send(record, Duration::from_secs(0)).await.map_err(|(err, msg)| anyhow::Error::from(err))?;
+        Ok(())
+    }
 }
 
 pub struct RdkafkaMessage {
