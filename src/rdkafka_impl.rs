@@ -24,35 +24,23 @@ use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
 
-pub struct RdKafka {
-    config: Arc<AppConfig>,
-}
-#[async_trait]
+pub struct RdKafka {}
 impl KafkaInterface for RdKafka {
     type Consumer = RdkafkaConsumer;
     type Message = RdkafkaMessage;
     type Producer = RdkafkaProducer;
-
-    fn from_config(config: AppConfig) -> Self
-    where
-        Self: Sized,
-    {
-        Self { config: Arc::new(config) }
-    }
-
-    fn get_config(&self) -> Arc<AppConfig> { Arc::clone(&self.config) }
 }
 
 pub struct RdkafkaConsumer {
-    config: Arc<AppConfig>,
     stream: Arc<Mutex<StreamConsumer>>,
+    config: KafkaConfig,
 }
 
 #[async_trait]
 impl CustomConsumer for RdkafkaConsumer {
     type Message = RdkafkaMessage;
 
-    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, _topic: &str, _partition: Option<i32>) -> Self
+    fn from_config(kafka_config: KafkaConfig) -> Self
     where
         Self: Sized,
     {
@@ -66,8 +54,8 @@ impl CustomConsumer for RdkafkaConsumer {
             .expect("Consumer creation failed");
 
         RdkafkaConsumer {
-            config,
             stream: Arc::new(Mutex::new(stream)),
+            config: kafka_config,
         }
     }
 
@@ -111,9 +99,8 @@ impl CustomConsumer for RdkafkaConsumer {
         F: FnMut(Self::Message) -> Fut + Send,
         Fut: TryFuture<Ok = (), Error = KafcatError> + Send,
     {
-        let config = Arc::clone(&self.config);
         let stream = Arc::clone(&self.stream).lock_owned().await;
-        let handler = stream.stream().timeout(if config.exit { Duration::from_secs(3) } else { Duration::from_secs(3600) });
+        let handler = stream.stream().timeout(if self.config.exit_on_done { Duration::from_secs(3) } else { Duration::from_secs(3600) });
         let handler = handler.map_err(|x| anyhow::Error::from(x).into()).try_for_each(|x| {
             let msg = x.detach();
             let msg = RdkafkaMessage {
@@ -128,16 +115,15 @@ impl CustomConsumer for RdkafkaConsumer {
 }
 
 pub struct RdkafkaProducer {
-    _config:  Arc<AppConfig>,
     producer: FutureProducer,
-    topic:    String,
+    config:   KafkaConfig,
 }
 
 #[async_trait]
 impl CustomProducer for RdkafkaProducer {
     type Message = RdkafkaMessage;
 
-    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str) -> Self
+    fn from_config(kafka_config: KafkaConfig) -> Self
     where
         Self: Sized,
     {
@@ -146,15 +132,11 @@ impl CustomProducer for RdkafkaProducer {
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error");
-        RdkafkaProducer {
-            _config: config,
-            producer,
-            topic: topic.to_owned(),
-        }
+        RdkafkaProducer { producer, config: kafka_config }
     }
 
     async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError> {
-        let mut record = FutureRecord::to(&self.topic);
+        let mut record = FutureRecord::to(self.config.topic.as_ref().expect("Must have a topic"));
         let key = msg.get_key();
         if key.len() > 0 {
             record = record.key(key);

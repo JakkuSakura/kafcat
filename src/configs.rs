@@ -65,9 +65,34 @@ pub enum WorkingMode {
     Query,
     Copy,
 }
+impl WorkingMode {
+    pub fn should_have_input_kafka(self) -> bool {
+        match self {
+            WorkingMode::Unspecified => false,
+            WorkingMode::Consumer => true,
+            WorkingMode::Producer => false,
+            WorkingMode::Metadata => true,
+            WorkingMode::Query => true,
+            WorkingMode::Copy => true,
+        }
+    }
+
+    pub fn should_have_output_kafka(self) -> bool {
+        match self {
+            WorkingMode::Unspecified => false,
+            WorkingMode::Consumer => false,
+            WorkingMode::Producer => true,
+            WorkingMode::Metadata => false,
+            WorkingMode::Query => false,
+            WorkingMode::Copy => true,
+        }
+    }
+}
+
 impl Default for WorkingMode {
     fn default() -> Self { Self::Unspecified }
 }
+
 #[derive(Debug, Clone, Copy)]
 pub enum KafkaOffset {
     Beginning,
@@ -77,6 +102,7 @@ pub enum KafkaOffset {
     OffsetInterval(i64, i64),
     TimeInterval(i64, i64),
 }
+
 impl Default for KafkaOffset {
     fn default() -> Self { Self::Beginning }
 }
@@ -106,6 +132,7 @@ impl FromStr for KafkaOffset {
         })
     }
 }
+
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
     matches:          ArgMatches,
@@ -113,63 +140,75 @@ pub struct AppConfig {
     pub exit:         bool,
     pub offset:       KafkaOffset,
     pub mode:         WorkingMode,
-    pub brokers:      String,
-    // pub num_workers:  i32,
-    pub topic:        Option<String>,
-    pub partition:    Option<i32>,
-    pub input_topic:  Option<String>,
-    pub output_topic: Option<String>,
+    pub input_kafka:  Option<KafkaConfig>,
+    pub output_kafka: Option<KafkaConfig>,
 }
-
 impl From<ArgMatches> for AppConfig {
     fn from(matches: ArgMatches) -> Self {
-        let brokers = matches.value_of_t_or_exit("brokers");
-        let group_id = matches.value_of("group-id").unwrap().into();
+        let brokers = matches.value_of("brokers").expect("Must specify brokers").to_owned();
+        let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
         // let num_workers = matches.value_of_t_or_exit("num-workers");
 
         let mut working_mode = None;
         for mode in &[WorkingMode::Producer, WorkingMode::Consumer, WorkingMode::Metadata, WorkingMode::Query, WorkingMode::Copy] {
             if matches.is_present(&mode.to_string()) {
-                working_mode = Some(mode);
+                working_mode = Some(*mode);
             }
         }
+        let working_mode = working_mode.expect("Must specify one of the working mode");
 
-        let topic = matches.value_of("topic").map(|x| x.into());
-        let input_topic = matches.value_of("input-topic").map(|x| x.into());
-        let output_topic = matches.value_of("output-topic").map(|x| x.into());
         let offset = matches.value_of("offset").map(|x| x.parse().expect("Cannot parse offset")).unwrap_or(KafkaOffset::Beginning);
         let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
         let exit = matches.occurrences_of("exit") > 0;
+
+        let topic = matches.value_of("topic").map(|x| x.into());
+        let input_topic: Option<String> = matches.value_of("input-topic").map(|x| x.into());
+        let output_topic: Option<String> = matches.value_of("output-topic").map(|x| x.into());
+
+        let input_kafka = if working_mode.should_have_output_kafka() {
+            Some(KafkaConfig {
+                brokers: brokers.to_owned(),
+                group_id: group_id.clone(),
+                offset,
+                partition,
+                topic: topic.clone().or(input_topic),
+                exit_on_done: exit,
+            })
+        } else {
+            None
+        };
+
+        let output_kafka = if working_mode.should_have_output_kafka() {
+            Some(KafkaConfig {
+                brokers: brokers.to_owned(),
+                group_id: group_id.clone(),
+                offset,
+                partition,
+                topic: topic.clone().or(output_topic),
+                exit_on_done: exit,
+            })
+        } else {
+            None
+        };
+
         AppConfig {
             matches,
             group_id,
             exit,
             offset,
-            mode: *working_mode.unwrap(),
-            brokers,
-            // num_workers,
-            topic,
-            partition,
-            input_topic,
-            output_topic,
+            mode: working_mode,
+            input_kafka,
+            output_kafka,
         }
     }
-}
-#[derive(Debug, Clone)]
-pub struct KafkaConfig {
-    pub brokers:   String,
-    pub group_id:  String,
-    pub offset:    KafkaOffset,
-    pub partition: Option<i32>,
 }
 
-impl From<&AppConfig> for KafkaConfig {
-    fn from(x: &AppConfig) -> Self {
-        KafkaConfig {
-            brokers:   x.brokers.clone(),
-            group_id:  x.group_id.clone(),
-            offset:    x.offset,
-            partition: x.partition,
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct KafkaConfig {
+    pub brokers:      String,
+    pub group_id:     String,
+    pub offset:       KafkaOffset,
+    pub partition:    Option<i32>,
+    pub topic:        Option<String>,
+    pub exit_on_done: bool,
 }

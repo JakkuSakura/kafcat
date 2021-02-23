@@ -6,21 +6,16 @@ use async_trait::async_trait;
 use futures::TryFuture;
 use std::sync::Arc;
 
-#[async_trait]
 pub trait KafkaInterface {
     type Message: CustomMessage;
     type Consumer: CustomConsumer<Message = Self::Message>;
     type Producer: CustomProducer<Message = Self::Message>;
-    fn from_config(config: AppConfig) -> Self
-    where
-        Self: Sized;
-    fn get_config(&self) -> Arc<AppConfig>;
 }
 
 #[async_trait]
 pub trait CustomConsumer: Send + Sync {
     type Message;
-    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str, partition: Option<i32>) -> Self
+    fn from_config(kafka_config: KafkaConfig) -> Self
     where
         Self: Sized;
 
@@ -35,7 +30,7 @@ pub trait CustomConsumer: Send + Sync {
 #[async_trait]
 pub trait CustomProducer: Send + Sync {
     type Message;
-    fn from_config(config: Arc<AppConfig>, kafka_config: KafkaConfig, topic: &str) -> Self
+    fn from_config(kafka_config: KafkaConfig) -> Self
     where
         Self: Sized;
     async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError>;

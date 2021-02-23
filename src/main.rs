@@ -26,18 +26,13 @@ async fn process_message<Msg: CustomMessage>(msg: &Msg) {
     println!("{:?}", msg.get_payload());
 }
 
-async fn run_async_copy_topic<Interface: KafkaInterface>(
-    interface: Interface,
-    consumer_config: KafkaConfig,
-    producer_config: KafkaConfig,
-    input_topic: &str,
-    output_topic: &str,
-) -> Result<(), KafcatError> {
+async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
     // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config.clone(), input_topic, interface.get_config().partition);
-    consumer.set_offset(&input_topic, consumer_config.partition, consumer_config.offset).await?;
+    let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
+    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
+    consumer.set_offset(input_config.topic.as_ref().unwrap(), input_config.partition, input_config.offset).await?;
 
-    let producer: Interface::Producer = Interface::Producer::from_config(interface.get_config(), producer_config.clone(), output_topic);
+    let producer: Interface::Producer = Interface::Producer::from_config(config.output_kafka.clone().expect("Must specify output kafka config"));
     consumer
         .for_each(|x| async {
             process_message(&x).await; // TODO
@@ -47,10 +42,10 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(
         .await
 }
 
-async fn run_async_consume_topic<Interface: KafkaInterface>(interface: Interface, consumer_config: KafkaConfig, topic: &str) -> Result<(), KafcatError> {
-    // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(interface.get_config(), consumer_config.clone(), topic, interface.get_config().partition);
-    consumer.set_offset(&topic, consumer_config.partition, consumer_config.offset).await?;
+async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
+    let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
+    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
+    consumer.set_offset(&input_config.topic.as_ref().unwrap(), input_config.partition, input_config.offset).await?;
     consumer
         .for_each(|x| async {
             process_message(&x).await;
@@ -85,26 +80,17 @@ pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
 async fn main() -> Result<(), KafcatError> {
     let matches = get_arg_matches();
     setup_logger(true, matches.value_of("log-conf"));
-    let config = Box::leak(Box::new(AppConfig::from(matches))) as &AppConfig;
+    let config = AppConfig::from(matches);
 
     info!("Starting {:?}", config.mode);
 
-    let interface = RdKafka::from_config(config.clone());
+    let interface = RdKafka {};
     match config.mode {
-        WorkingMode::Consumer => run_async_consume_topic(interface, config.into(), config.topic.as_ref().or(config.input_topic.as_ref()).expect("Must use topic")).await?,
+        WorkingMode::Consumer => run_async_consume_topic(interface, config).await?,
         WorkingMode::Producer => {},
         WorkingMode::Metadata => {},
         WorkingMode::Query => {},
-        WorkingMode::Copy => {
-            run_async_copy_topic(
-                interface,
-                config.into(),
-                config.into(),
-                config.input_topic.as_ref().expect("Must use input_topic"),
-                config.input_topic.as_ref().expect("Must use output_topic"),
-            )
-            .await?
-        },
+        WorkingMode::Copy => run_async_copy_topic(interface, config).await?,
         _ => {},
     }
     Ok(())
