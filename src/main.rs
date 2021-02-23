@@ -6,16 +6,14 @@ extern crate log;
 use chrono::DateTime;
 use chrono::Local;
 use env_logger::fmt::Formatter;
-use env_logger::Builder;
-use kafcat::configs::get_arg_matches;
+use env_logger::{Builder, Target};
 use kafcat::configs::AppConfig;
-use kafcat::configs::KafkaConfig;
 use kafcat::configs::WorkingMode;
 use kafcat::error::KafcatError;
-use kafcat::kafka_interface::CustomConsumer;
-use kafcat::kafka_interface::CustomMessage;
-use kafcat::kafka_interface::CustomProducer;
-use kafcat::kafka_interface::KafkaInterface;
+use kafcat::interface::CustomConsumer;
+use kafcat::interface::CustomMessage;
+use kafcat::interface::CustomProducer;
+use kafcat::interface::KafkaInterface;
 use kafcat::rdkafka_impl::RdKafka;
 use log::LevelFilter;
 use log::Record;
@@ -30,7 +28,7 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, 
     // Create the `StreamConsumer`, to receive the messages from the topic in form of a `Stream`.
     let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
-    consumer.set_offset(input_config.topic.as_ref().unwrap(), input_config.partition, input_config.offset).await?;
+    consumer.set_offset(input_config.offset).await?;
 
     let producer: Interface::Producer = Interface::Producer::from_config(config.output_kafka.clone().expect("Must specify output kafka config"));
     consumer
@@ -45,7 +43,7 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, 
 async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
     let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
-    consumer.set_offset(&input_config.topic.as_ref().unwrap(), input_config.partition, input_config.offset).await?;
+    consumer.set_offset(input_config.offset).await?;
     consumer
         .for_each(|x| async {
             process_message(&x).await;
@@ -55,7 +53,7 @@ async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interfac
         .await
 }
 
-pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
+pub fn setup_logger(log_thread: bool, rust_log: LevelFilter) {
     let output_format = move |formatter: &mut Formatter, record: &Record| {
         let thread_name = if log_thread {
             format!("(t: {}) ", thread::current().name().unwrap_or("unknown"))
@@ -69,23 +67,21 @@ pub fn setup_logger(log_thread: bool, rust_log: Option<&str>) {
     };
 
     let mut builder = Builder::new();
-    builder.format(output_format).filter(None, LevelFilter::Info);
-
-    rust_log.map(|conf| builder.parse_filters(conf));
-
+    builder.format(output_format).filter(None, rust_log);
+    builder.target(Target::Stderr);
     builder.init();
 }
 
 #[tokio::main]
 async fn main() -> Result<(), KafcatError> {
-    let matches = get_arg_matches();
-    setup_logger(true, matches.value_of("log-conf"));
-    let config = AppConfig::from(matches);
+    let args = std::env::args().collect::<Vec<String>>();
+    let config = AppConfig::from_args(args.iter().map(|x| x.as_str()).collect());
+    setup_logger(true, config.log_level);
 
-    info!("Starting {:?}", config.mode);
+    info!("Starting {:?}", config.working_mode);
 
     let interface = RdKafka {};
-    match config.mode {
+    match config.working_mode {
         WorkingMode::Consumer => run_async_consume_topic(interface, config).await?,
         WorkingMode::Producer => {},
         WorkingMode::Metadata => {},

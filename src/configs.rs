@@ -1,58 +1,47 @@
 use clap::crate_version;
 use clap::App;
 use clap::Arg;
-use clap::ArgGroup;
 use clap::ArgMatches;
 use strum::Display;
 use strum::EnumString;
 
-pub fn get_arg_matches() -> ArgMatches {
-    let mut app = App::new("kafcat").version(crate_version!()).author("Jiangkun Qiu <qiujiangkun@foxmail.com>").about("cat but kafka");
-    #[cfg(features = "help_heading")]
-    {
-        app = app.help_heading("MODE");
-    }
-    app = app
-        .arg(Arg::new("consumer").short('C').about("use Consumer mode").group("mode"))
-        .arg(Arg::new("producer").short('P').about("use Producer mode").group("mode"))
-        .arg(Arg::new("metadata").short('L').about("use Metadata mode").group("mode"))
-        .arg(Arg::new("query").short('Q').about("use Query mode").group("mode"))
-        .arg(Arg::new("copy").long("cp").about("use Copy mode").group("mode"))
-        .group(ArgGroup::new("mode").required(true).args(&["consumer", "producer", "metadata", "query"]));
-    #[cfg(features = "help_heading")]
-    {
-        app = app.help_heading("OPTIONS");
-    }
-    app.arg(Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092"))
-        .arg(
-            Arg::new("group-id")
-                .short('G')
-                .long("group-id")
-                .about("Consumer group id. (Kafka >=0.9 balanced consumer groups)")
-                .default_value("kafcat"),
-        )
-        .arg(Arg::new("log-conf").long("log-conf").about("Configure the logging format (example: 'rdkafka=trace')").takes_value(true))
-        .arg(Arg::new("topic").short('t').long("topic").about("Topic").takes_value(true))
-        .arg(Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true))
-        .arg(Arg::new("input-topic").long("input-topic").about("Input topic").takes_value(true))
-        .arg(Arg::new("output-topic").long("output-topic").about("Output topic").takes_value(true))
-        .arg(Arg::new("offset").short('o').takes_value(true).default_value(r#"beginning"#).long_about(
-            r#"Offset to start consuming from:
+pub fn group_id() -> Arg<'static> {
+    Arg::new("group-id")
+        .short('G')
+        .long("group-id")
+        .about("Consumer group id. (Kafka >=0.9 balanced consumer groups)")
+        .default_value("kafcat")
+}
+pub fn offset() -> Arg<'static> {
+    Arg::new("offset").short('o').takes_value(true).default_value(r#"beginning"#).long_about(
+        r#"Offset to start consuming from:
                      beginning | end | stored |
                      <value>  (absolute offset) |
                      -<value> (relative offset from end)
                      s@<value> (timestamp in ms to start at)
                      e@<value> (timestamp in ms to stop at (not included))"#,
-        ))
-        .arg(Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received"))
-        .group(
-            ArgGroup::new("topics")
-                .args(&["input-topic", "output-topic"])
-                .requires_all(&["input-topic", "output-topic", "copy"])
-                .conflicts_with("topic"),
+    )
+}
+pub fn topic() -> Arg<'static> { Arg::new("topic").short('t').long("topic").about("Topic").takes_value(true) }
+pub fn brokers() -> Arg<'static> { Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092") }
+pub fn partition() -> Arg<'static> { Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true) }
+pub fn exit() -> Arg<'static> { Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received") }
+pub fn consume_subcommand() -> App<'static> { App::new("consume").short_flag('C').args(vec![brokers(), group_id(), topic(), partition(), offset(), exit()]) }
+pub fn produce_subcommand() -> App<'static> { App::new("produce").short_flag('P').args(vec![brokers(), group_id(), topic(), partition()]) }
+pub fn copy_subcommand() -> App<'static> { App::new("copy").alias("--cp").arg(Arg::new("from").multiple(true)).arg(Arg::new("to").multiple(true).last(true)) }
+pub fn get_arg_matches() -> App<'static> {
+    App::new("kafcat")
+        .version(crate_version!())
+        .author("Jiangkun Qiu <qiujiangkun@foxmail.com>")
+        .about("cat but kafka")
+        .subcommands(vec![consume_subcommand(), produce_subcommand(), copy_subcommand()])
+        .arg(
+            Arg::new("log")
+                .long("log")
+                .about("Configure the logging format: Off, Error, Warn, Info, Debug, Trace")
+                .takes_value(true),
         )
-        // .arg(Arg::new("num-workers").long("num-workers").about("Number of workers").takes_value(true).default_value("1"))
-        .get_matches()
+    // .arg(Arg::new("num-workers").long("num-workers").about("Number of workers").takes_value(true).default_value("1"))
 }
 
 #[derive(Debug, Copy, Clone, EnumString, Display)]
@@ -107,6 +96,7 @@ impl Default for KafkaOffset {
     fn default() -> Self { Self::Beginning }
 }
 
+use log::LevelFilter;
 use regex::Regex;
 use std::str::FromStr;
 
@@ -133,82 +123,99 @@ impl FromStr for KafkaOffset {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AppConfig {
-    matches:          ArgMatches,
-    pub group_id:     String,
-    pub exit:         bool,
-    pub offset:       KafkaOffset,
-    pub mode:         WorkingMode,
-    pub input_kafka:  Option<KafkaConfig>,
-    pub output_kafka: Option<KafkaConfig>,
+    pub working_mode: WorkingMode,
+    pub input_kafka:  Option<KafkaConsumerConfig>,
+    pub output_kafka: Option<KafkaProducerConfig>,
+    pub log_level:    LevelFilter,
 }
-impl From<ArgMatches> for AppConfig {
-    fn from(matches: ArgMatches) -> Self {
+impl AppConfig {
+    pub fn from_args(args: Vec<&str>) -> Self {
+        let matches = get_arg_matches().get_matches_from(args);
+        let kafcat_log_env = std::env::var("KAFCAT_LOG").ok();
+        let log_level = matches
+            .value_of("log")
+            .or(kafcat_log_env.as_ref().map(|x| x.as_str()))
+            .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
+            .unwrap_or(LevelFilter::Warn);
+
+        let mut this = AppConfig {
+            working_mode: WorkingMode::Unspecified,
+            input_kafka: None,
+            output_kafka: None,
+            log_level,
+        };
+        match matches.subcommand() {
+            Some(("consume", matches)) => {
+                this.input_kafka = Some(KafkaConsumerConfig::from_matches(matches));
+            },
+            Some(("produce", matches)) => {
+                this.output_kafka = Some(KafkaProducerConfig::from_matches(matches));
+            },
+            Some(("copy", matches)) => {
+                let from: Vec<&str> = matches.values_of("from").expect("Must specify from").collect();
+                let to: Vec<&str> = matches.values_of("to").expect("Must specify to").collect();
+                let consumer = consume_subcommand().get_matches_from(from);
+                let producer = produce_subcommand().get_matches_from(to);
+                this.input_kafka = Some(KafkaConsumerConfig::from_matches(&consumer));
+                this.input_kafka = Some(KafkaConsumerConfig::from_matches(&producer));
+            },
+            _ => unreachable!(),
+        }
+
+        this
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KafkaConsumerConfig {
+    pub brokers:      String,
+    pub group_id:     String,
+    pub offset:       KafkaOffset,
+    pub partition:    Option<i32>,
+    pub topic:        String,
+    pub exit_on_done: bool,
+}
+
+impl KafkaConsumerConfig {
+    pub fn from_matches(matches: &ArgMatches) -> KafkaConsumerConfig {
         let brokers = matches.value_of("brokers").expect("Must specify brokers").to_owned();
         let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
-        // let num_workers = matches.value_of_t_or_exit("num-workers");
-
-        let mut working_mode = None;
-        for mode in &[WorkingMode::Producer, WorkingMode::Consumer, WorkingMode::Metadata, WorkingMode::Query, WorkingMode::Copy] {
-            if matches.is_present(&mode.to_string()) {
-                working_mode = Some(*mode);
-            }
-        }
-        let working_mode = working_mode.expect("Must specify one of the working mode");
-
         let offset = matches.value_of("offset").map(|x| x.parse().expect("Cannot parse offset")).unwrap_or(KafkaOffset::Beginning);
         let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
         let exit = matches.occurrences_of("exit") > 0;
-
-        let topic = matches.value_of("topic").map(|x| x.into());
-        let input_topic: Option<String> = matches.value_of("input-topic").map(|x| x.into());
-        let output_topic: Option<String> = matches.value_of("output-topic").map(|x| x.into());
-
-        let input_kafka = if working_mode.should_have_output_kafka() {
-            Some(KafkaConfig {
-                brokers: brokers.to_owned(),
-                group_id: group_id.clone(),
-                offset,
-                partition,
-                topic: topic.clone().or(input_topic),
-                exit_on_done: exit,
-            })
-        } else {
-            None
-        };
-
-        let output_kafka = if working_mode.should_have_output_kafka() {
-            Some(KafkaConfig {
-                brokers: brokers.to_owned(),
-                group_id: group_id.clone(),
-                offset,
-                partition,
-                topic: topic.clone().or(output_topic),
-                exit_on_done: exit,
-            })
-        } else {
-            None
-        };
-
-        AppConfig {
-            matches,
+        let topic = matches.value_of("topic").expect("Must specify topic").to_owned();
+        KafkaConsumerConfig {
+            brokers,
             group_id,
-            exit,
             offset,
-            mode: working_mode,
-            input_kafka,
-            output_kafka,
+            partition,
+            topic,
+            exit_on_done: exit,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct KafkaConfig {
-    pub brokers:      String,
-    pub group_id:     String,
-    pub offset:       KafkaOffset,
-    pub partition:    Option<i32>,
-    pub topic:        Option<String>,
-    pub exit_on_done: bool,
+pub struct KafkaProducerConfig {
+    pub brokers:   String,
+    pub group_id:  String,
+    pub partition: Option<i32>,
+    pub topic:     String,
+}
+impl KafkaProducerConfig {
+    pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
+        let brokers = matches.value_of("brokers").expect("Must specify brokers").to_owned();
+        let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
+        let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
+        let topic = matches.value_of("topic").expect("Must specify topic").to_owned();
+
+        KafkaProducerConfig {
+            brokers: brokers.to_owned(),
+            group_id: group_id.clone(),
+            partition,
+            topic,
+        }
+    }
 }

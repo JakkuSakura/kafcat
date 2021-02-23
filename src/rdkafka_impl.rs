@@ -1,11 +1,11 @@
-use crate::configs::AppConfig;
-use crate::configs::KafkaConfig;
+use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
+use crate::configs::KafkaProducerConfig;
 use crate::error::KafcatError;
-use crate::kafka_interface::CustomConsumer;
-use crate::kafka_interface::CustomMessage;
-use crate::kafka_interface::CustomProducer;
-use crate::kafka_interface::KafkaInterface;
+use crate::interface::CustomConsumer;
+use crate::interface::CustomMessage;
+use crate::interface::CustomProducer;
+use crate::interface::KafkaInterface;
 use crate::timeout_stream::TimeoutStreamExt;
 use futures::TryFuture;
 use futures::TryStreamExt;
@@ -33,14 +33,14 @@ impl KafkaInterface for RdKafka {
 
 pub struct RdkafkaConsumer {
     stream: Arc<Mutex<StreamConsumer>>,
-    config: KafkaConfig,
+    config: KafkaConsumerConfig,
 }
 
 #[async_trait]
 impl CustomConsumer for RdkafkaConsumer {
     type Message = RdkafkaMessage;
 
-    fn from_config(kafka_config: KafkaConfig) -> Self
+    fn from_config(kafka_config: KafkaConsumerConfig) -> Self
     where
         Self: Sized,
     {
@@ -59,11 +59,11 @@ impl CustomConsumer for RdkafkaConsumer {
         }
     }
 
-    async fn set_offset(&self, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<(), KafcatError> {
+    async fn set_offset(&self, offset: KafkaOffset) -> Result<(), KafcatError> {
         info!("offset {:?}", offset);
         let mut tpl = TopicPartitionList::new();
-        let partition = partition.unwrap_or(0);
-        let topic_ = topic.to_owned();
+        let partition = self.config.partition.unwrap_or(0);
+        let topic = self.config.topic.clone();
         let offset = match offset {
             KafkaOffset::Beginning => Offset::Beginning,
             KafkaOffset::End => Offset::End,
@@ -77,9 +77,9 @@ impl CustomConsumer for RdkafkaConsumer {
                     let consumer = consumer.lock_owned().await;
                     let r: JoinHandle<KafkaResult<_>> = spawn_blocking(move || {
                         let mut tpl_b = TopicPartitionList::new();
-                        tpl_b.add_partition_offset(&topic_, partition, Offset::Offset(b as _))?;
+                        tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
                         tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
-                        Ok(tpl_b.find_partition(&topic_, partition).unwrap().offset())
+                        Ok(tpl_b.find_partition(&topic, partition).unwrap().offset())
                     });
                     r.await
                 }
@@ -89,7 +89,7 @@ impl CustomConsumer for RdkafkaConsumer {
             },
         };
 
-        tpl.add_partition_offset(&topic, partition, offset).unwrap();
+        tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
         self.stream.lock().await.assign(&tpl).map_err(|x| anyhow::Error::from(x))?;
         Ok(())
     }
@@ -116,14 +116,14 @@ impl CustomConsumer for RdkafkaConsumer {
 
 pub struct RdkafkaProducer {
     producer: FutureProducer,
-    config:   KafkaConfig,
+    config:   KafkaProducerConfig,
 }
 
 #[async_trait]
 impl CustomProducer for RdkafkaProducer {
     type Message = RdkafkaMessage;
 
-    fn from_config(kafka_config: KafkaConfig) -> Self
+    fn from_config(kafka_config: KafkaProducerConfig) -> Self
     where
         Self: Sized,
     {
@@ -136,7 +136,7 @@ impl CustomProducer for RdkafkaProducer {
     }
 
     async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError> {
-        let mut record = FutureRecord::to(self.config.topic.as_ref().expect("Must have a topic"));
+        let mut record = FutureRecord::to(&self.config.topic);
         let key = msg.get_key();
         if key.len() > 0 {
             record = record.key(key);

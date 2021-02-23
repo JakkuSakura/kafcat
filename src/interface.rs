@@ -1,10 +1,9 @@
-use crate::configs::AppConfig;
-use crate::configs::KafkaConfig;
+use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
+use crate::configs::KafkaProducerConfig;
 use crate::error::KafcatError;
 use async_trait::async_trait;
 use futures::TryFuture;
-use std::sync::Arc;
 
 pub trait KafkaInterface {
     type Message: CustomMessage;
@@ -15,11 +14,11 @@ pub trait KafkaInterface {
 #[async_trait]
 pub trait CustomConsumer: Send + Sync {
     type Message;
-    fn from_config(kafka_config: KafkaConfig) -> Self
+    fn from_config(kafka_config: KafkaConsumerConfig) -> Self
     where
         Self: Sized;
 
-    async fn set_offset(&self, topic: &str, partition: Option<i32>, offset: KafkaOffset) -> Result<(), KafcatError>;
+    async fn set_offset(&self, offset: KafkaOffset) -> Result<(), KafcatError>;
 
     async fn for_each<Fut, F>(&self, mut func: F) -> Result<(), KafcatError>
     where
@@ -30,7 +29,7 @@ pub trait CustomConsumer: Send + Sync {
 #[async_trait]
 pub trait CustomProducer: Send + Sync {
     type Message;
-    fn from_config(kafka_config: KafkaConfig) -> Self
+    fn from_config(kafka_config: KafkaProducerConfig) -> Self
     where
         Self: Sized;
     async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError>;

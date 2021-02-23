@@ -3,7 +3,7 @@ pub mod configs;
 pub mod connection;
 pub mod error;
 pub mod input;
-pub mod kafka_interface;
+pub mod interface;
 pub mod output;
 pub mod rdkafka_impl;
 pub mod timeout_stream;
