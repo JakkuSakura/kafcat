@@ -7,20 +7,25 @@ use crate::interface::CustomMessage;
 use crate::interface::CustomProducer;
 use crate::interface::KafkaInterface;
 use crate::timeout_stream::TimeoutStreamExt;
-use futures::TryFuture;
-use futures::TryStreamExt;
-use rdkafka::consumer::Consumer;
-use rdkafka::consumer::StreamConsumer;
-use rdkafka::error::KafkaResult;
+use futures::stream::MapErr;
+use futures::{Stream, TryFuture, TryFutureExt};
+use futures::{StreamExt, TryStreamExt};
+use rdkafka::client::DefaultClientContext;
+use rdkafka::consumer::{Consumer, MessageStream};
+use rdkafka::consumer::{DefaultConsumerContext, StreamConsumer};
+use rdkafka::error::{KafkaError, KafkaResult};
+use rdkafka::message::BorrowedMessage;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
 
@@ -39,6 +44,7 @@ pub struct RdkafkaConsumer {
 #[async_trait]
 impl CustomConsumer for RdkafkaConsumer {
     type Message = RdkafkaMessage;
+    type StreamType = RdkafkaStreamImpl;
 
     fn from_config(kafka_config: KafkaConsumerConfig) -> Self
     where
@@ -112,8 +118,36 @@ impl CustomConsumer for RdkafkaConsumer {
         });
         handler.await
     }
+
+    async fn stream(&self) -> Self::StreamType {
+        let stream = Arc::clone(&self.stream).lock_owned().await;
+        let stream2 = stream.stream();
+        let stream3 = stream2.map_err(process_err);
+        let stream4 = stream3.map_ok(process);
+        RdkafkaStreamImpl { stream, stream2, stream3, stream4 }
+    }
 }
 
+pub struct RdkafkaStreamImpl {
+    stream:  OwnedMutexGuard<StreamConsumer>,
+    stream2: MessageStream<'static, DefaultConsumerContext>,
+    stream3: MapErr<MessageStream<'static, DefaultConsumerContext>, fn(KafkaError) -> KafcatError>,
+    stream4: futures::stream::MapOk<futures::stream::MapErr<MessageStream<'static, DefaultConsumerContext>, fn(KafkaError) -> KafcatError>, for<'r> fn(BorrowedMessage<'r>) -> RdkafkaMessage>,
+}
+impl Stream for RdkafkaStreamImpl {
+    type Item = Result<RdkafkaMessage, KafcatError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> { self.stream4.poll_next(cx) }
+}
+fn process_err(x: KafkaError) -> KafcatError { anyhow::Error::from(x).into() }
+fn process(x: BorrowedMessage) -> RdkafkaMessage {
+    let msg = x.detach();
+    RdkafkaMessage {
+        key:       msg.key().map(Vec::from).unwrap_or(vec![]),
+        payload:   msg.payload().map(Vec::from).unwrap_or(vec![]),
+        timestamp: msg.timestamp().to_millis().unwrap(),
+    }
+}
 pub struct RdkafkaProducer {
     producer: FutureProducer,
     config:   KafkaProducerConfig,

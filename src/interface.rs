@@ -3,7 +3,7 @@ use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
 use crate::error::KafcatError;
 use async_trait::async_trait;
-use futures::TryFuture;
+use futures::{Stream, TryFuture};
 
 pub trait KafkaInterface {
     type Message: CustomMessage;
@@ -24,6 +24,9 @@ pub trait CustomConsumer: Send + Sync {
     where
         F: FnMut(Self::Message) -> Fut + Send,
         Fut: TryFuture<Ok = (), Error = KafcatError> + Send;
+
+    type StreamType: Stream<Item = Result<Self::Message, KafcatError>>;
+    async fn stream(&self) -> Self::StreamType;
 }
 
 #[async_trait]
@@ -42,4 +45,18 @@ pub trait CustomMessage: Send + Sync {
     fn set_key(&mut self, key: Vec<u8>);
     fn set_payload(&mut self, payload: Vec<u8>);
     fn set_timestamp(&mut self, timestamp: i64);
+}
+
+impl CustomMessage for Vec<u8> {
+    fn get_key(&self) -> &[u8] { &[] }
+
+    fn get_payload(&self) -> &[u8] { &self }
+
+    fn get_timestamp(&self) -> i64 { 0 }
+
+    fn set_key(&mut self, _key: Vec<u8>) { panic!("Setting key for Vec<u8>") }
+
+    fn set_payload(&mut self, payload: Vec<u8>) { *self = payload; }
+
+    fn set_timestamp(&mut self, _timestamp: i64) { panic!("Setting timestamp for Vec<u8>") }
 }
