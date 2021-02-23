@@ -11,7 +11,6 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 rdkafka = "0.25.0"
 kafka = "0.8.0"
-#clap = { git = "https://github.com/clap-rs/clap", rev = "1602b103" } # for https://github.com/clap-rs/clap/issues/2022
 clap = "3.0.0-beta.2" #  wait for 3.0.0
 log = "0.4.14"
 env_logger = "0.8.3"
@@ -30,6 +29,4 @@ pin-project-lite = "0.2.4"
 async-trait = "0.1.42"
 anyhow = "1.0.38"
 thiserror = "1.0.24"
-
-[features]
-help_heading = [] # clap #2022
+pin-utils = "0.1.0"

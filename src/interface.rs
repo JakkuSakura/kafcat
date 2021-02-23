@@ -3,12 +3,11 @@ use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
 use crate::error::KafcatError;
 use async_trait::async_trait;
-use futures::{Stream, TryFuture};
 
 pub trait KafkaInterface {
-    type Message: CustomMessage;
-    type Consumer: CustomConsumer<Message = Self::Message>;
-    type Producer: CustomProducer<Message = Self::Message>;
+    type Message: CustomMessage + 'static;
+    type Consumer: CustomConsumer<Message = Self::Message> + 'static;
+    type Producer: CustomProducer<Message = Self::Message> + 'static;
 }
 
 #[async_trait]
@@ -20,13 +19,7 @@ pub trait CustomConsumer: Send + Sync {
 
     async fn set_offset(&self, offset: KafkaOffset) -> Result<(), KafcatError>;
 
-    async fn for_each<Fut, F>(&self, mut func: F) -> Result<(), KafcatError>
-    where
-        F: FnMut(Self::Message) -> Fut + Send,
-        Fut: TryFuture<Ok = (), Error = KafcatError> + Send;
-
-    type StreamType: Stream<Item = Result<Self::Message, KafcatError>>;
-    async fn stream(&self) -> Self::StreamType;
+    async fn recv(&self) -> Result<Self::Message, KafcatError>;
 }
 
 #[async_trait]

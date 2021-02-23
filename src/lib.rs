@@ -6,7 +6,7 @@ pub mod input;
 pub mod interface;
 pub mod output;
 pub mod rdkafka_impl;
-pub mod timeout_stream;
+pub mod scheduled_stream;
 
 #[macro_use]
 extern crate async_trait;
