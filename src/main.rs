@@ -8,6 +8,7 @@ use chrono::Local;
 use env_logger::fmt::Formatter;
 use env_logger::Builder;
 use env_logger::Target;
+use futures::TryStreamExt;
 use kafcat::configs::AppConfig;
 use kafcat::configs::WorkingMode;
 use kafcat::error::KafcatError;
@@ -16,15 +17,14 @@ use kafcat::interface::CustomMessage;
 use kafcat::interface::CustomProducer;
 use kafcat::interface::KafkaInterface;
 use kafcat::rdkafka_impl::RdKafka;
-use kafcat::scheduled_stream::ScheduledStream;
+use kafcat::scheduled_stream::scheduled_stream;
 use log::LevelFilter;
 use log::Record;
 use std::io::Write;
-use std::sync::Arc;
 use std::thread;
 use tokio::time::Duration;
 
-fn process_message<Msg: CustomMessage>(msg: &Msg) -> Result<(), KafcatError> {
+async fn process_message<Msg: CustomMessage>(msg: &Msg) -> Result<(), KafcatError> {
     println!("{:?}", msg.get_payload());
     Ok(())
 }
@@ -43,15 +43,14 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, 
     consumer.set_offset(input_config.offset).await?;
 
     let producer: Interface::Producer = Interface::Producer::from_config(config.output_kafka.clone().expect("Must specify output kafka config"));
-    let producer = Arc::new(producer);
     let delay = get_delay(input_config.exit_on_done);
-    ScheduledStream::new(delay, consumer, move |msg| {
-        process_message(&msg)?;
-        let p = Arc::clone(&producer);
-        tokio::task::spawn(async move { p.write_one(msg).await });
-        Ok(())
-    })
-    .await?;
+    scheduled_stream(delay, consumer)
+        .try_for_each(|msg| async {
+            process_message(&msg).await?;
+            producer.write_one(msg).await?;
+            Ok(())
+        })
+        .await?;
 
     Ok(())
 }
@@ -61,7 +60,13 @@ async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interfac
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
     consumer.set_offset(input_config.offset).await?;
     let delay = get_delay(input_config.exit_on_done);
-    ScheduledStream::new(delay, consumer, |msg| process_message(&msg)).await?;
+    scheduled_stream(delay, consumer)
+        .try_for_each(|msg| async {
+            process_message(&msg).await?;
+            drop(msg);
+            Ok(())
+        })
+        .await?;
     Ok(())
 }
 

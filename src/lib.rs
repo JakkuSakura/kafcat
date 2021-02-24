@@ -13,3 +13,7 @@ extern crate async_trait;
 
 #[macro_use]
 extern crate log;
+
+use crate::error::KafcatError;
+
+type Result<T> = std::result::Result<T, KafcatError>;

@@ -1,11 +1,11 @@
 use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
-use crate::error::KafcatError;
 use crate::interface::CustomConsumer;
 use crate::interface::CustomMessage;
 use crate::interface::CustomProducer;
 use crate::interface::KafkaInterface;
+use crate::Result;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
@@ -56,7 +56,7 @@ impl CustomConsumer for RdkafkaConsumer {
         }
     }
 
-    async fn set_offset(&self, offset: KafkaOffset) -> Result<(), KafcatError> {
+    async fn set_offset(&self, offset: KafkaOffset) -> Result<()> {
         info!("offset {:?}", offset);
         let mut tpl = TopicPartitionList::new();
         let partition = self.config.partition.unwrap_or(0);
@@ -91,7 +91,7 @@ impl CustomConsumer for RdkafkaConsumer {
         Ok(())
     }
 
-    async fn recv(&self) -> Result<Self::Message, KafcatError> {
+    async fn recv(&self) -> Result<Self::Message> {
         let locker = Arc::clone(&self.stream).lock_owned().await;
         match locker.recv().await {
             Ok(x) => {
@@ -127,7 +127,7 @@ impl CustomProducer for RdkafkaProducer {
         RdkafkaProducer { producer, config: kafka_config }
     }
 
-    async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError> {
+    async fn write_one(&self, msg: Self::Message) -> Result<()> {
         let mut record = FutureRecord::to(&self.config.topic);
         let key = msg.get_key();
         if key.len() > 0 {

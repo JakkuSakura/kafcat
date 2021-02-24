@@ -1,7 +1,7 @@
 use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
-use crate::error::KafcatError;
+use crate::Result;
 use async_trait::async_trait;
 
 pub trait KafkaInterface {
@@ -12,26 +12,26 @@ pub trait KafkaInterface {
 
 #[async_trait]
 pub trait CustomConsumer: Send + Sync {
-    type Message;
+    type Message: CustomMessage + 'static;
     fn from_config(kafka_config: KafkaConsumerConfig) -> Self
     where
         Self: Sized;
 
-    async fn set_offset(&self, offset: KafkaOffset) -> Result<(), KafcatError>;
+    async fn set_offset(&self, offset: KafkaOffset) -> Result<()>;
 
-    async fn recv(&self) -> Result<Self::Message, KafcatError>;
+    async fn recv(&self) -> Result<Self::Message>;
 }
 
 #[async_trait]
 pub trait CustomProducer: Send + Sync {
-    type Message;
+    type Message: CustomMessage + 'static;
     fn from_config(kafka_config: KafkaProducerConfig) -> Self
     where
         Self: Sized;
-    async fn write_one(&self, msg: Self::Message) -> Result<(), KafcatError>;
+    async fn write_one(&self, msg: Self::Message) -> Result<()>;
 }
 
-pub trait CustomMessage: Send + Sync {
+pub trait CustomMessage: Send + Sync + Unpin {
     fn get_key(&self) -> &[u8];
     fn get_payload(&self) -> &[u8];
     fn get_timestamp(&self) -> i64;
