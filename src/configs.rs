@@ -1,5 +1,6 @@
 use clap::crate_version;
 use clap::App;
+use clap::AppSettings;
 use clap::Arg;
 use clap::ArgMatches;
 use strum::Display;
@@ -26,15 +27,26 @@ pub fn topic() -> Arg<'static> { Arg::new("topic").short('t').long("topic").abou
 pub fn brokers() -> Arg<'static> { Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092") }
 pub fn partition() -> Arg<'static> { Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true) }
 pub fn exit() -> Arg<'static> { Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received") }
-pub fn consume_subcommand() -> App<'static> { App::new("consume").short_flag('C').args(vec![brokers(), group_id(), topic(), partition(), offset(), exit()]) }
-pub fn produce_subcommand() -> App<'static> { App::new("produce").short_flag('P').args(vec![brokers(), group_id(), topic(), partition()]) }
-pub fn copy_subcommand() -> App<'static> { App::new("copy").alias("--cp").arg(Arg::new("from").multiple(true)).arg(Arg::new("to").multiple(true).last(true)) }
+pub fn consume_subcommand() -> App<'static> {
+    App::new("consume")
+        .short_flag('C')
+        .args(vec![brokers(), group_id(), topic().required(true), partition(), offset(), exit()])
+}
+pub fn produce_subcommand() -> App<'static> { App::new("produce").short_flag('P').args(vec![brokers(), group_id(), topic().required(true), partition()]) }
+pub fn copy_subcommand() -> App<'static> {
+    App::new("copy")
+        .alias("--cp")
+        .arg(Arg::new("from").multiple(true).required(true))
+        .arg(Arg::new("to").multiple(true).last(true).required(true))
+        .about("Copy mode accepts two parts of arguments <from> and <to>, the two parts are separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer mode.")
+}
 pub fn get_arg_matches() -> App<'static> {
     App::new("kafcat")
         .version(crate_version!())
         .author("Jiangkun Qiu <qiujiangkun@foxmail.com>")
         .about("cat but kafka")
         .subcommands(vec![consume_subcommand(), produce_subcommand(), copy_subcommand()])
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(
             Arg::new("log")
                 .long("log")
