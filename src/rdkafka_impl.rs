@@ -11,7 +11,6 @@ use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
-use rdkafka::util::Timeout;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
@@ -71,30 +70,34 @@ impl CustomConsumer for RdkafkaConsumer {
             KafkaOffset::OffsetInterval(b, _) => Offset::Offset(b as _),
             KafkaOffset::TimeInterval(b, _e) => {
                 let consumer = Arc::clone(&self.stream);
-                async move {
-                    let consumer = consumer.lock_owned().await;
-                    let r: JoinHandle<KafkaResult<_>> = spawn_blocking(move || {
-                        let mut tpl_b = TopicPartitionList::new();
-                        tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
-                        tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
-                        Ok(tpl_b.find_partition(&topic, partition).unwrap().offset())
-                    });
-                    r.await
-                }
-                .await
-                .expect("")
-                .map_err(|x| anyhow::Error::from(x))?
+                let consumer = consumer.lock_owned().await;
+                let r: JoinHandle<KafkaResult<_>> = spawn_blocking(move || {
+                    let mut tpl_b = TopicPartitionList::new();
+                    tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
+                    tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
+                    Ok(tpl_b.find_partition(&topic, partition).unwrap().offset())
+                });
+                r.await.unwrap().map_err(|x| anyhow::Error::from(x))?
             },
         };
 
         tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
-        let stream = self.stream.lock().await;
-        stream.assign(&tpl).map_err(|x| anyhow::Error::from(x))?;
-        let watermarks = stream
-            .fetch_watermarks(&self.config.topic, self.config.partition.unwrap_or(0), Timeout::Never)
-            .map_err(|x| anyhow::Error::new(x))?;
-        debug!("watermarks: {:?}", watermarks);
         Ok(())
+    }
+
+    async fn get_offset(&self) -> Result<i64> { unimplemented!() }
+
+    async fn get_watermarks(&self) -> Result<(i64, i64)> {
+        let stream = Arc::clone(&self.stream).lock_owned().await;
+        let config = self.config.clone();
+        let watermarks = spawn_blocking(move || {
+            stream
+                .fetch_watermarks(&config.topic, config.partition.unwrap_or(0), Duration::from_secs(3))
+                .map_err(|x| anyhow::Error::new(x))
+        })
+        .await
+        .unwrap()?;
+        Ok(watermarks)
     }
 
     async fn recv(&self) -> Result<Self::Message> {

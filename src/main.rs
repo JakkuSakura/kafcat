@@ -58,6 +58,9 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, 
 async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
     let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
+    info!("Getting watermarks");
+    let watermarks = consumer.get_watermarks().await?;
+    info!("Watermarks: {:?}", watermarks);
     consumer.set_offset(input_config.offset).await?;
     let delay = get_delay(input_config.exit_on_done);
     scheduled_stream(delay, consumer)

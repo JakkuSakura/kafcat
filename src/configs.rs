@@ -153,7 +153,7 @@ impl AppConfig {
             .value_of("log")
             .or(kafcat_log_env.as_ref().map(|x| x.as_str()))
             .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
-            .unwrap_or(LevelFilter::Warn);
+            .unwrap_or(LevelFilter::Info);
 
         let mut this = AppConfig {
             working_mode: WorkingMode::Unspecified,
@@ -241,8 +241,6 @@ impl KafkaProducerConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::configs::copy_subcommand;
-    use crate::configs::get_arg_matcher;
     use crate::configs::AppConfig;
     use crate::configs::KafkaConsumerConfig;
     use crate::configs::KafkaOffset;

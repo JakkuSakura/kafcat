@@ -19,7 +19,8 @@ pub trait CustomConsumer: Send + Sync {
         Self: Sized;
 
     async fn set_offset(&self, offset: KafkaOffset) -> Result<()>;
-
+    async fn get_offset(&self) -> Result<i64>;
+    async fn get_watermarks(&self) -> Result<(i64, i64)>;
     async fn recv(&self) -> Result<Self::Message>;
 }
 
