@@ -38,11 +38,11 @@ fn get_delay(exit: bool) -> Duration {
 }
 
 async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
-    let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
+    let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
     consumer.set_offset(input_config.offset).await?;
 
-    let producer: Interface::Producer = Interface::Producer::from_config(config.output_kafka.clone().expect("Must specify output kafka config"));
+    let producer: Interface::Producer = Interface::Producer::from_config(config.producer_kafka.clone().expect("Must specify output kafka config"));
     let delay = get_delay(input_config.exit_on_done);
     scheduled_stream(delay, consumer)
         .try_for_each(|msg| async {
@@ -56,7 +56,7 @@ async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, 
 }
 
 async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
-    let input_config = config.input_kafka.as_ref().expect("Must specify input kafka config");
+    let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
     let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
     consumer.set_offset(input_config.offset).await?;
     let delay = get_delay(input_config.exit_on_done);
@@ -69,6 +69,8 @@ async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interfac
         .await?;
     Ok(())
 }
+
+async fn run_async_produce_topic<Interface: KafkaInterface>(_interface: Interface, _config: AppConfig) -> Result<(), KafcatError> { unimplemented!() }
 
 pub fn setup_logger(log_thread: bool, rust_log: LevelFilter) {
     let output_format = move |formatter: &mut Formatter, record: &Record| {
@@ -100,7 +102,7 @@ async fn main() -> Result<(), KafcatError> {
     let interface = RdKafka {};
     match config.working_mode {
         WorkingMode::Consumer => run_async_consume_topic(interface, config).await?,
-        WorkingMode::Producer => {},
+        WorkingMode::Producer => run_async_produce_topic(interface, config).await?,
         WorkingMode::Metadata => {},
         WorkingMode::Query => {},
         WorkingMode::Copy => run_async_copy_topic(interface, config).await?,

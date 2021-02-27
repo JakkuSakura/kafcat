@@ -11,6 +11,7 @@ use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
+use rdkafka::util::Timeout;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
@@ -57,7 +58,7 @@ impl CustomConsumer for RdkafkaConsumer {
     }
 
     async fn set_offset(&self, offset: KafkaOffset) -> Result<()> {
-        info!("offset {:?}", offset);
+        info!("set offset {:?}", offset);
         let mut tpl = TopicPartitionList::new();
         let partition = self.config.partition.unwrap_or(0);
         let topic = self.config.topic.clone();
@@ -87,12 +88,18 @@ impl CustomConsumer for RdkafkaConsumer {
         };
 
         tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
-        self.stream.lock().await.assign(&tpl).map_err(|x| anyhow::Error::from(x))?;
+        let stream = self.stream.lock().await;
+        stream.assign(&tpl).map_err(|x| anyhow::Error::from(x))?;
+        let watermarks = stream
+            .fetch_watermarks(&self.config.topic, self.config.partition.unwrap_or(0), Timeout::Never)
+            .map_err(|x| anyhow::Error::new(x))?;
+        debug!("watermarks: {:?}", watermarks);
         Ok(())
     }
 
     async fn recv(&self) -> Result<Self::Message> {
         let locker = Arc::clone(&self.stream).lock_owned().await;
+
         match locker.recv().await {
             Ok(x) => {
                 let msg = x.detach();
@@ -141,7 +148,7 @@ impl CustomProducer for RdkafkaProducer {
         Ok(())
     }
 }
-
+#[derive(Debug)]
 pub struct RdkafkaMessage {
     key:       Vec<u8>,
     payload:   Vec<u8>,

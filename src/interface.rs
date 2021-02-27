@@ -3,6 +3,7 @@ use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
 use crate::Result;
 use async_trait::async_trait;
+use std::fmt::Debug;
 
 pub trait KafkaInterface {
     type Message: CustomMessage + 'static;
@@ -31,7 +32,7 @@ pub trait CustomProducer: Send + Sync {
     async fn write_one(&self, msg: Self::Message) -> Result<()>;
 }
 
-pub trait CustomMessage: Send + Sync + Unpin {
+pub trait CustomMessage: Send + Sync + Unpin + Debug {
     fn get_key(&self) -> &[u8];
     fn get_payload(&self) -> &[u8];
     fn get_timestamp(&self) -> i64;
