@@ -3,7 +3,9 @@ use crate::interface::CustomConsumer;
 use crate::Result;
 use async_stream::stream;
 use futures::Stream;
-use tokio::time::{timeout_at, Duration, Instant};
+use tokio::time::timeout_at;
+use tokio::time::Duration;
+use tokio::time::Instant;
 
 pub fn scheduled_stream<T: CustomConsumer>(timeout: Duration, consumer: T) -> impl Stream<Item = Result<T::Message>> {
     stream! {

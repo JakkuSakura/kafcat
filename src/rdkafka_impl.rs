@@ -15,6 +15,8 @@ use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
+use serde::Deserialize;
+use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -151,7 +153,7 @@ impl CustomProducer for RdkafkaProducer {
         Ok(())
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RdkafkaMessage {
     key:       Vec<u8>,
     payload:   Vec<u8>,
@@ -159,6 +161,17 @@ pub struct RdkafkaMessage {
 }
 
 impl CustomMessage for RdkafkaMessage {
+    fn new() -> Self
+    where
+        Self: Sized,
+    {
+        Self {
+            key:       vec![],
+            payload:   vec![],
+            timestamp: 0,
+        }
+    }
+
     fn get_key(&self) -> &[u8] { &self.key }
 
     fn get_payload(&self) -> &[u8] { &self.payload }

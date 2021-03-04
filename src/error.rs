@@ -6,5 +6,7 @@ pub enum KafcatError {
     #[error("Timeout error")]
     Timeout,
     #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

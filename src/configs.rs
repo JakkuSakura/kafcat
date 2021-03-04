@@ -27,12 +27,24 @@ pub fn topic() -> Arg<'static> { Arg::new("topic").short('t').long("topic").abou
 pub fn brokers() -> Arg<'static> { Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value("localhost:9092") }
 pub fn partition() -> Arg<'static> { Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true) }
 pub fn exit() -> Arg<'static> { Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received") }
+
+pub fn m_delimiter() -> Arg<'static> {
+    Arg::new("m_delimiter")
+        .short('D')
+        .about("Delimiter to split input into messages(currently only supports '\\n')")
+        .default_value("\n")
+}
+pub fn k_delimiter() -> Arg<'static> { Arg::new("k_delimiter").short('K').about("Delimiter to split input key and message").default_value(":") }
 pub fn consume_subcommand() -> App<'static> {
     App::new("consume")
         .short_flag('C')
         .args(vec![brokers(), group_id(), topic().required(true), partition(), offset(), exit()])
 }
-pub fn produce_subcommand() -> App<'static> { App::new("produce").short_flag('P').args(vec![brokers(), group_id(), topic().required(true), partition()]) }
+pub fn produce_subcommand() -> App<'static> {
+    App::new("produce")
+        .short_flag('P')
+        .args(vec![brokers(), group_id(), topic().required(true), partition(), m_delimiter(), k_delimiter()])
+}
 pub fn copy_subcommand() -> App<'static> {
     // this is not meant to be used directly only for help message
     App::new("copy")
@@ -195,6 +207,7 @@ pub struct KafkaConsumerConfig {
     pub partition:    Option<i32>,
     pub topic:        String,
     pub exit_on_done: bool,
+    pub format:       String,
 }
 
 impl KafkaConsumerConfig {
@@ -211,7 +224,21 @@ impl KafkaConsumerConfig {
             offset,
             partition,
             topic,
+            format: "text".to_string(),
             exit_on_done: exit,
+        }
+    }
+}
+impl Default for KafkaConsumerConfig {
+    fn default() -> Self {
+        KafkaConsumerConfig {
+            brokers:      "localhost:9092".to_string(),
+            group_id:     "kafcat".to_string(),
+            offset:       KafkaOffset::Beginning,
+            partition:    None,
+            topic:        "".to_string(),
+            format:       "text".to_string(),
+            exit_on_done: false,
         }
     }
 }
@@ -222,6 +249,9 @@ pub struct KafkaProducerConfig {
     pub group_id:  String,
     pub partition: Option<i32>,
     pub topic:     String,
+    pub msg_delim: String,
+    pub key_delim: String,
+    pub format:    String,
 }
 impl KafkaProducerConfig {
     pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
@@ -229,16 +259,32 @@ impl KafkaProducerConfig {
         let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
         let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
         let topic = matches.value_of("topic").expect("Must specify topic").to_owned();
-
+        let msg_delim = matches.value_of("m_delimiter").unwrap().to_owned();
+        let key_delim = matches.value_of("k_delimiter").unwrap().to_owned();
         KafkaProducerConfig {
             brokers: brokers.to_owned(),
             group_id: group_id.clone(),
             partition,
             topic,
+            msg_delim,
+            key_delim,
+            format: "".to_string(),
         }
     }
 }
-
+impl Default for KafkaProducerConfig {
+    fn default() -> Self {
+        KafkaProducerConfig {
+            brokers:   "localhost:9092".to_string(),
+            group_id:  "kafcat".to_string(),
+            partition: None,
+            topic:     "".to_string(),
+            msg_delim: "\n".to_string(),
+            key_delim: ":".to_string(),
+            format:    "text".to_string(),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::configs::AppConfig;
@@ -250,40 +296,44 @@ mod tests {
     fn consumer_config() {
         let config = AppConfig::from_args(vec!["kafcat", "-C", "-b", "localhost", "-t", "topic", "-e"]);
         assert_eq!(config.consumer_kafka.unwrap(), KafkaConsumerConfig {
-            brokers:      "localhost".to_string(),
-            group_id:     "kafcat".to_string(),
-            offset:       KafkaOffset::Beginning,
-            partition:    None,
-            topic:        "topic".to_string(),
+            brokers: "localhost".to_string(),
+            group_id: "kafcat".to_string(),
+            offset: KafkaOffset::Beginning,
+            partition: None,
+            topic: "topic".to_string(),
             exit_on_done: true,
+            ..Default::default()
         })
     }
     #[test]
     fn producer_config() {
         let config = AppConfig::from_args(vec!["kafcat", "-P", "-b", "localhost", "-t", "topic"]);
         assert_eq!(config.producer_kafka.unwrap(), KafkaProducerConfig {
-            brokers:   "localhost".to_string(),
-            group_id:  "kafcat".to_string(),
+            brokers: "localhost".to_string(),
+            group_id: "kafcat".to_string(),
             partition: None,
-            topic:     "topic".to_string(),
+            topic: "topic".to_string(),
+            ..Default::default()
         })
     }
     #[test]
     fn copy_config() {
         let config = AppConfig::from_args(vec!["kafcat", "copy", "-b", "localhost1", "-t", "topic1", "-e", "--", "-b", "localhost2", "-t", "topic2"]);
         assert_eq!(config.consumer_kafka.unwrap(), KafkaConsumerConfig {
-            brokers:      "localhost1".to_string(),
-            group_id:     "kafcat".to_string(),
-            offset:       KafkaOffset::Beginning,
-            partition:    None,
-            topic:        "topic1".to_string(),
+            brokers: "localhost1".to_string(),
+            group_id: "kafcat".to_string(),
+            offset: KafkaOffset::Beginning,
+            partition: None,
+            topic: "topic1".to_string(),
             exit_on_done: true,
+            ..Default::default()
         });
         assert_eq!(config.producer_kafka.unwrap(), KafkaProducerConfig {
-            brokers:   "localhost2".to_string(),
-            group_id:  "kafcat".to_string(),
+            brokers: "localhost2".to_string(),
+            group_id: "kafcat".to_string(),
             partition: None,
-            topic:     "topic2".to_string(),
+            topic: "topic2".to_string(),
+            ..Default::default()
         });
     }
 }

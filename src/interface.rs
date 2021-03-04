@@ -3,6 +3,8 @@ use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
 use crate::Result;
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt::Debug;
 
 pub trait KafkaInterface {
@@ -33,7 +35,10 @@ pub trait CustomProducer: Send + Sync {
     async fn write_one(&self, msg: Self::Message) -> Result<()>;
 }
 
-pub trait CustomMessage: Send + Sync + Unpin + Debug {
+pub trait CustomMessage: Send + Sync + Unpin + Debug + Serialize + DeserializeOwned {
+    fn new() -> Self
+    where
+        Self: Sized;
     fn get_key(&self) -> &[u8];
     fn get_payload(&self) -> &[u8];
     fn get_timestamp(&self) -> i64;
@@ -43,6 +48,13 @@ pub trait CustomMessage: Send + Sync + Unpin + Debug {
 }
 
 impl CustomMessage for Vec<u8> {
+    fn new() -> Self
+    where
+        Self: Sized,
+    {
+        Vec::new()
+    }
+
     fn get_key(&self) -> &[u8] { &[] }
 
     fn get_payload(&self) -> &[u8] { &self }
