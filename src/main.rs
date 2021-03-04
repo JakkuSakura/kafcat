@@ -2,78 +2,22 @@
 
 #[macro_use]
 extern crate log;
+pub mod modes;
+use modes::*;
 
 use chrono::DateTime;
 use chrono::Local;
 use env_logger::fmt::Formatter;
 use env_logger::Builder;
 use env_logger::Target;
-use futures::TryStreamExt;
 use kafcat::configs::AppConfig;
 use kafcat::configs::WorkingMode;
 use kafcat::error::KafcatError;
-use kafcat::interface::CustomConsumer;
-use kafcat::interface::CustomMessage;
-use kafcat::interface::CustomProducer;
-use kafcat::interface::KafkaInterface;
 use kafcat::rdkafka_impl::RdKafka;
-use kafcat::scheduled_stream::scheduled_stream;
 use log::LevelFilter;
 use log::Record;
 use std::io::Write;
 use std::thread;
-use tokio::time::Duration;
-
-async fn process_message<Msg: CustomMessage>(msg: &Msg) -> Result<(), KafcatError> {
-    println!("{:?}", msg.get_payload());
-    Ok(())
-}
-
-fn get_delay(exit: bool) -> Duration {
-    if exit {
-        Duration::from_millis(3000)
-    } else {
-        Duration::from_secs(3600)
-    }
-}
-
-async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
-    let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
-    consumer.set_offset(input_config.offset).await?;
-
-    let producer: Interface::Producer = Interface::Producer::from_config(config.producer_kafka.clone().expect("Must specify output kafka config"));
-    let delay = get_delay(input_config.exit_on_done);
-    scheduled_stream(delay, consumer)
-        .try_for_each(|msg| async {
-            process_message(&msg).await?;
-            producer.write_one(msg).await?;
-            Ok(())
-        })
-        .await?;
-
-    Ok(())
-}
-
-async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
-    let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
-    info!("Getting watermarks");
-    let watermarks = consumer.get_watermarks().await?;
-    info!("Watermarks: {:?}", watermarks);
-    consumer.set_offset(input_config.offset).await?;
-    let delay = get_delay(input_config.exit_on_done);
-    scheduled_stream(delay, consumer)
-        .try_for_each(|msg| async {
-            process_message(&msg).await?;
-            drop(msg);
-            Ok(())
-        })
-        .await?;
-    Ok(())
-}
-
-async fn run_async_produce_topic<Interface: KafkaInterface>(_interface: Interface, _config: AppConfig) -> Result<(), KafcatError> { unimplemented!() }
 
 pub fn setup_logger(log_thread: bool, rust_log: LevelFilter) {
     let output_format = move |formatter: &mut Formatter, record: &Record| {
