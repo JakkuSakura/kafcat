@@ -8,5 +8,7 @@ pub enum KafcatError {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
