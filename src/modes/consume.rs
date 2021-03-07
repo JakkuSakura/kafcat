@@ -2,7 +2,7 @@ use crate::modes::get_delay;
 use kafcat::configs::AppConfig;
 use kafcat::configs::SerdeFormat;
 use kafcat::error::KafcatError;
-use kafcat::interface::CustomConsumer;
+use kafcat::interface::KafkaConsumer;
 use kafcat::interface::KafkaInterface;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;

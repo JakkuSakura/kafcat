@@ -1,9 +1,9 @@
 use crate::modes::get_delay;
 use kafcat::configs::AppConfig;
 use kafcat::error::KafcatError;
-use kafcat::interface::CustomConsumer;
-use kafcat::interface::CustomProducer;
+use kafcat::interface::KafkaConsumer;
 use kafcat::interface::KafkaInterface;
+use kafcat::interface::KafkaProducer;
 use tokio::time::timeout_at;
 use tokio::time::Instant;
 

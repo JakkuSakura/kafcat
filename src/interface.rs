@@ -6,13 +6,13 @@ use crate::Result;
 use async_trait::async_trait;
 
 pub trait KafkaInterface {
-    type Consumer: CustomConsumer + 'static;
-    type Producer: CustomProducer + 'static;
+    type Consumer: KafkaConsumer + 'static;
+    type Producer: KafkaProducer + 'static;
 }
 
 #[async_trait]
-pub trait CustomConsumer: Send + Sync {
-    async fn from_config(kafka_config: KafkaConsumerConfig) -> Self
+pub trait KafkaConsumer: Send + Sync {
+    async fn from_config(config: KafkaConsumerConfig) -> Self
     where
         Self: Sized;
 
@@ -23,8 +23,8 @@ pub trait CustomConsumer: Send + Sync {
 }
 
 #[async_trait]
-pub trait CustomProducer: Send + Sync {
-    async fn from_config(kafka_config: KafkaProducerConfig) -> Self
+pub trait KafkaProducer: Send + Sync {
+    async fn from_config(config: KafkaProducerConfig) -> Self
     where
         Self: Sized;
     async fn write_one(&self, msg: KafkaMessage) -> Result<()>;

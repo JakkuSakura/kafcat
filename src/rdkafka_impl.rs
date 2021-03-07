@@ -1,9 +1,9 @@
 use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
-use crate::interface::CustomConsumer;
-use crate::interface::CustomProducer;
+use crate::interface::KafkaConsumer;
 use crate::interface::KafkaInterface;
+use crate::interface::KafkaProducer;
 use crate::message::KafkaMessage;
 use crate::Result;
 use rdkafka::config::RDKafkaLogLevel;
@@ -16,14 +16,8 @@ use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
-use serde::Deserialize;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
-use tokio::task::spawn_blocking;
-use tokio::task::JoinHandle;
+use tokio::task::block_in_place;
 
 pub struct RdKafka {}
 impl KafkaInterface for RdKafka {
@@ -32,27 +26,22 @@ impl KafkaInterface for RdKafka {
 }
 
 pub struct RdkafkaConsumer {
-    stream: Arc<Mutex<StreamConsumer>>,
+    stream: StreamConsumer,
     config: KafkaConsumerConfig,
 }
 impl RdkafkaConsumer {
-    pub fn new(stream: StreamConsumer, config: KafkaConsumerConfig) -> Self {
-        RdkafkaConsumer {
-            stream: Arc::new(Mutex::new(stream)),
-            config,
-        }
-    }
+    pub fn new(stream: StreamConsumer, config: KafkaConsumerConfig) -> Self { RdkafkaConsumer { stream, config } }
 }
 
 #[async_trait]
-impl CustomConsumer for RdkafkaConsumer {
-    async fn from_config(kafka_config: KafkaConsumerConfig) -> Self
+impl KafkaConsumer for RdkafkaConsumer {
+    async fn from_config(config: KafkaConsumerConfig) -> Self
     where
         Self: Sized,
     {
         let stream: StreamConsumer = ClientConfig::new()
-            .set("group.id", &kafka_config.group_id)
-            .set("bootstrap.servers", &kafka_config.brokers)
+            .set("group.id", &config.group_id)
+            .set("bootstrap.servers", &config.brokers)
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
@@ -60,10 +49,7 @@ impl CustomConsumer for RdkafkaConsumer {
             .create()
             .expect("Consumer creation failed");
 
-        RdkafkaConsumer {
-            stream: Arc::new(Mutex::new(stream)),
-            config: kafka_config,
-        }
+        RdkafkaConsumer { stream, config }
     }
 
     async fn set_offset_and_subscribe(&self, offset: KafkaOffset) -> Result<()> {
@@ -79,41 +65,33 @@ impl CustomConsumer for RdkafkaConsumer {
             KafkaOffset::Offset(o) => Offset::OffsetTail((-o - 1) as _),
             KafkaOffset::OffsetInterval(b, _) => Offset::Offset(b as _),
             KafkaOffset::TimeInterval(b, _e) => {
-                let consumer = Arc::clone(&self.stream);
-                let consumer = consumer.lock_owned().await;
-                let r: JoinHandle<KafkaResult<_>> = spawn_blocking(move || {
+                let consumer = &self.stream;
+                let r: KafkaResult<_> = block_in_place(|| {
                     let mut tpl_b = TopicPartitionList::new();
                     tpl_b.add_partition_offset(&topic, partition, Offset::Offset(b as _))?;
                     tpl_b = consumer.offsets_for_times(tpl_b, Duration::from_secs(1))?;
                     Ok(tpl_b.find_partition(&topic, partition).unwrap().offset())
                 });
-                r.await.unwrap().map_err(|x| anyhow::Error::from(x))?
+                r?
             },
         };
 
         tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
-        let lock = self.stream.lock();
-        lock.await.assign(&tpl)?;
+        self.stream.assign(&tpl)?;
         Ok(())
     }
 
     async fn get_offset(&self) -> Result<i64> { unimplemented!() }
 
     async fn get_watermarks(&self) -> Result<(i64, i64)> {
-        let stream = Arc::clone(&self.stream).lock_owned().await;
+        let stream = &self.stream;
         let config = self.config.clone();
-        let watermarks = spawn_blocking(move || {
-            stream
-                .fetch_watermarks(&config.topic, config.partition.unwrap_or(0), Duration::from_secs(3))
-                .map_err(|x| anyhow::Error::new(x))
-        })
-        .await
-        .unwrap()?;
+        let watermarks = block_in_place(|| stream.fetch_watermarks(&config.topic, config.partition.unwrap_or(0), Duration::from_secs(3)))?;
         Ok(watermarks)
     }
 
     async fn recv(&self) -> Result<KafkaMessage> {
-        let locker = Arc::clone(&self.stream).lock_owned().await;
+        let locker = &self.stream;
 
         match locker.recv().await {
             Ok(x) => {
@@ -135,7 +113,7 @@ pub struct RdkafkaProducer {
 }
 
 #[async_trait]
-impl CustomProducer for RdkafkaProducer {
+impl KafkaProducer for RdkafkaProducer {
     async fn from_config(kafka_config: KafkaProducerConfig) -> Self
     where
         Self: Sized,
