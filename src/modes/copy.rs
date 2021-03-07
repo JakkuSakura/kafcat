@@ -9,10 +9,10 @@ use tokio::time::Instant;
 
 pub async fn run_async_copy_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
     let input_config = config.consumer_kafka.as_ref().expect("Must specify input kafka config");
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone());
-    consumer.set_offset(input_config.offset).await?;
+    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone()).await;
+    consumer.set_offset_and_subscribe(input_config.offset).await?;
 
-    let producer: Interface::Producer = Interface::Producer::from_config(config.producer_kafka.clone().expect("Must specify output kafka config"));
+    let producer: Interface::Producer = Interface::Producer::from_config(config.producer_kafka.clone().expect("Must specify output kafka config")).await;
     let timeout = get_delay(input_config.exit_on_done);
     loop {
         match timeout_at(Instant::now() + timeout, consumer.recv()).await {

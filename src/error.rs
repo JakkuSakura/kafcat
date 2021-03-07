@@ -10,5 +10,7 @@ pub enum KafcatError {
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
+    RdkafkaError(#[from] rdkafka::error::KafkaError),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

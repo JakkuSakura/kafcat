@@ -12,7 +12,7 @@ use strum::EnumString;
 const GROUP_ID_DEFAULT: &str = "kafcat";
 const BROKERS_DEFAULT: &str = "localhost:9092";
 const MSG_DELIMITER_DEFAULT: &str = "\n";
-const KEY_DELIMITER_DEFAULT: &str = "\n";
+const KEY_DELIMITER_DEFAULT: &str = ":";
 const OFFSET_DEFAULT: &str = "Beginning";
 const FORMAT_DEFAULT: &str = "text";
 

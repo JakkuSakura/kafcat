@@ -2,10 +2,11 @@ use crate::configs::KafkaConsumerConfig;
 use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
 use crate::interface::CustomConsumer;
-use crate::interface::CustomMessage;
 use crate::interface::CustomProducer;
 use crate::interface::KafkaInterface;
+use crate::message::KafkaMessage;
 use crate::Result;
+use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
@@ -17,6 +18,7 @@ use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -26,7 +28,6 @@ use tokio::task::JoinHandle;
 pub struct RdKafka {}
 impl KafkaInterface for RdKafka {
     type Consumer = RdkafkaConsumer;
-    type Message = RdkafkaMessage;
     type Producer = RdkafkaProducer;
 }
 
@@ -34,12 +35,18 @@ pub struct RdkafkaConsumer {
     stream: Arc<Mutex<StreamConsumer>>,
     config: KafkaConsumerConfig,
 }
+impl RdkafkaConsumer {
+    pub fn new(stream: StreamConsumer, config: KafkaConsumerConfig) -> Self {
+        RdkafkaConsumer {
+            stream: Arc::new(Mutex::new(stream)),
+            config,
+        }
+    }
+}
 
 #[async_trait]
 impl CustomConsumer for RdkafkaConsumer {
-    type Message = RdkafkaMessage;
-
-    fn from_config(kafka_config: KafkaConsumerConfig) -> Self
+    async fn from_config(kafka_config: KafkaConsumerConfig) -> Self
     where
         Self: Sized,
     {
@@ -49,6 +56,7 @@ impl CustomConsumer for RdkafkaConsumer {
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
+            .set_log_level(RDKafkaLogLevel::Debug)
             .create()
             .expect("Consumer creation failed");
 
@@ -58,7 +66,7 @@ impl CustomConsumer for RdkafkaConsumer {
         }
     }
 
-    async fn set_offset(&self, offset: KafkaOffset) -> Result<()> {
+    async fn set_offset_and_subscribe(&self, offset: KafkaOffset) -> Result<()> {
         info!("set offset {:?}", offset);
         let mut tpl = TopicPartitionList::new();
         let partition = self.config.partition.unwrap_or(0);
@@ -84,6 +92,8 @@ impl CustomConsumer for RdkafkaConsumer {
         };
 
         tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
+        let lock = self.stream.lock();
+        lock.await.assign(&tpl)?;
         Ok(())
     }
 
@@ -102,16 +112,17 @@ impl CustomConsumer for RdkafkaConsumer {
         Ok(watermarks)
     }
 
-    async fn recv(&self) -> Result<Self::Message> {
+    async fn recv(&self) -> Result<KafkaMessage> {
         let locker = Arc::clone(&self.stream).lock_owned().await;
 
         match locker.recv().await {
             Ok(x) => {
                 let msg = x.detach();
-                Ok(RdkafkaMessage {
-                    key:       msg.key().map(Vec::from).unwrap_or(vec![]),
-                    payload:   msg.payload().map(Vec::from).unwrap_or(vec![]),
+                Ok(KafkaMessage {
+                    key: msg.key().map(Vec::from).unwrap_or(vec![]),
+                    payload: msg.payload().map(Vec::from).unwrap_or(vec![]),
                     timestamp: msg.timestamp().to_millis().unwrap(),
+                    ..KafkaMessage::default() // TODO headers
                 })
             },
             Err(err) => Err(anyhow::Error::from(err).into()),
@@ -125,9 +136,7 @@ pub struct RdkafkaProducer {
 
 #[async_trait]
 impl CustomProducer for RdkafkaProducer {
-    type Message = RdkafkaMessage;
-
-    fn from_config(kafka_config: KafkaProducerConfig) -> Self
+    async fn from_config(kafka_config: KafkaProducerConfig) -> Self
     where
         Self: Sized,
     {
@@ -139,48 +148,17 @@ impl CustomProducer for RdkafkaProducer {
         RdkafkaProducer { producer, config: kafka_config }
     }
 
-    async fn write_one(&self, msg: Self::Message) -> Result<()> {
+    async fn write_one(&self, msg: KafkaMessage) -> Result<()> {
         let mut record = FutureRecord::to(&self.config.topic);
-        let key = msg.get_key();
+        let key = msg.key;
         if key.len() > 0 {
-            record = record.key(key);
+            record = record.key(&key);
         }
-        let payload = msg.get_payload();
+        let payload = msg.payload;
         if payload.len() > 0 {
-            record = record.payload(payload)
+            record = record.payload(&payload)
         }
         self.producer.send(record, Duration::from_secs(0)).await.map_err(|(err, _msg)| anyhow::Error::from(err))?;
         Ok(())
     }
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RdkafkaMessage {
-    key:       Vec<u8>,
-    payload:   Vec<u8>,
-    timestamp: i64,
-}
-
-impl CustomMessage for RdkafkaMessage {
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
-        Self {
-            key:       vec![],
-            payload:   vec![],
-            timestamp: 0,
-        }
-    }
-
-    fn get_key(&self) -> &[u8] { &self.key }
-
-    fn get_payload(&self) -> &[u8] { &self.payload }
-
-    fn get_timestamp(&self) -> i64 { self.timestamp }
-
-    fn set_key(&mut self, key: Vec<u8>) { self.key = key; }
-
-    fn set_payload(&mut self, payload: Vec<u8>) { self.payload = payload; }
-
-    fn set_timestamp(&mut self, timestamp: i64) { self.timestamp = timestamp; }
 }
