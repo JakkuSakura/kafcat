@@ -39,6 +39,8 @@ pub fn brokers() -> Arg<'static> { Arg::new("brokers").short('b').long("brokers"
 pub fn partition() -> Arg<'static> { Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true) }
 pub fn exit() -> Arg<'static> { Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received") }
 pub fn format() -> Arg<'static> { Arg::new("format").short('s').long("format").about("Serialize/Deserialize format").default_value(FORMAT_DEFAULT) }
+pub fn flush_count() -> Arg<'static> { Arg::new("flush-count").long("flush-count").about("Number of messages to receive before flushing stdout").takes_value(true) }
+pub fn flush_bytes() -> Arg<'static> { Arg::new("flush-bytes").long("flush-bytes").about("Size of messages in bytes accumulated before flushing to stdout").takes_value(true) }
 
 pub fn msg_delimiter() -> Arg<'static> {
     Arg::new("msg-delimiter")
@@ -63,6 +65,8 @@ pub fn consume_subcommand() -> App<'static> {
         msg_delimiter(),
         key_delimiter(),
         format(),
+        flush_count(),
+        flush_bytes()
     ])
 }
 pub fn produce_subcommand() -> App<'static> {
@@ -240,15 +244,17 @@ impl AppConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KafkaConsumerConfig {
-    pub brokers:      String,
-    pub group_id:     String,
-    pub offset:       KafkaOffset,
-    pub partition:    Option<i32>,
-    pub topic:        String,
-    pub exit_on_done: bool,
-    pub msg_delim:    String,
-    pub key_delim:    String,
-    pub format:       SerdeFormat,
+    pub brokers:            String,
+    pub group_id:           String,
+    pub offset:             KafkaOffset,
+    pub partition:          Option<i32>,
+    pub topic:              String,
+    pub exit_on_done:       bool,
+    pub msg_delim:          String,
+    pub key_delim:          String,
+    pub format:             SerdeFormat,
+    pub msg_count_flush:    Option<usize>,
+    pub msg_bytes_flush:    Option<usize>
 }
 
 impl KafkaConsumerConfig {
@@ -262,6 +268,8 @@ impl KafkaConsumerConfig {
         let format = matches.value_of("format").expect("Must specify format");
         let msg_delim = matches.value_of("msg-delimiter").unwrap().to_owned();
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
+        let msg_count_flush = matches.value_of("flush-count").map(|x|x.parse().unwrap());
+        let msg_bytes_flush = matches.value_of("flush-bytes").map(|x|x.parse().unwrap());
         KafkaConsumerConfig {
             brokers,
             group_id,
@@ -272,21 +280,25 @@ impl KafkaConsumerConfig {
             exit_on_done: exit,
             msg_delim,
             key_delim,
+            msg_count_flush,
+            msg_bytes_flush
         }
     }
 }
 impl Default for KafkaConsumerConfig {
     fn default() -> Self {
         KafkaConsumerConfig {
-            brokers:      BROKERS_DEFAULT.to_string(),
-            group_id:     GROUP_ID_DEFAULT.to_string(),
-            offset:       KafkaOffset::from_str(OFFSET_DEFAULT).unwrap(),
-            partition:    None,
-            topic:        "".to_string(),
-            format:       SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
-            exit_on_done: false,
-            msg_delim:    MSG_DELIMITER_DEFAULT.to_string(),
-            key_delim:    KEY_DELIMITER_DEFAULT.to_string(),
+            brokers:            BROKERS_DEFAULT.to_string(),
+            group_id:           GROUP_ID_DEFAULT.to_string(),
+            offset:             KafkaOffset::from_str(OFFSET_DEFAULT).unwrap(),
+            partition:          None,
+            topic:              "".to_string(),
+            format:             SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
+            exit_on_done:       false,
+            msg_delim:          MSG_DELIMITER_DEFAULT.to_string(),
+            key_delim:          KEY_DELIMITER_DEFAULT.to_string(),
+            msg_count_flush:    None,
+            msg_bytes_flush:    None
         }
     }
 }

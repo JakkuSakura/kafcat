@@ -16,24 +16,42 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Inte
 
     let timeout = get_delay(input_config.exit_on_done);
     let mut stdout = BufWriter::new(tokio::io::stdout());
+    let mut bytes_read = 0;
+    let mut messages_count = 0;
     loop {
         match timeout_at(Instant::now() + timeout, consumer.recv()).await {
-            Ok(Ok(msg)) => match input_config.format {
-                SerdeFormat::Text => {
-                    stdout.write(&msg.key).await?;
-                    stdout.write(input_config.key_delim.as_bytes()).await?;
-                    stdout.write(&msg.payload).await?;
-                    stdout.write(input_config.msg_delim.as_bytes()).await?;
-                },
-                SerdeFormat::Json => {
-                    let x = serde_json::to_string(&msg)?;
-                    stdout.write(x.as_bytes()).await?;
-                    stdout.write(input_config.msg_delim.as_bytes()).await?;
-                },
-                SerdeFormat::Regex(r) => {
-                    unimplemented!("Does not supports {} yet", r);
-                },
-            },
+            Ok(Ok(msg)) => {
+                match input_config.format {
+                    SerdeFormat::Text => {
+                        bytes_read += stdout.write(&msg.key).await?;
+                        bytes_read += stdout.write(input_config.key_delim.as_bytes()).await?;
+                        bytes_read += stdout.write(&msg.payload).await?;
+                        bytes_read += stdout.write(input_config.msg_delim.as_bytes()).await?;
+                    }
+                    SerdeFormat::Json => {
+                        let x = serde_json::to_string(&msg)?;
+                        bytes_read += stdout.write(x.as_bytes()).await?;
+                        bytes_read += stdout.write(input_config.msg_delim.as_bytes()).await?;
+                    }
+                    SerdeFormat::Regex(r) => {
+                        unimplemented!("Does not support {} yet", r);
+                    }
+                };
+                messages_count += 1;
+                let should_flush = {
+                    match (input_config.msg_count_flush, input_config.msg_bytes_flush) {
+                        (None, None) => false,
+                        (None, Some(bytes_treshold)) => bytes_read >= bytes_treshold,
+                        (Some(count_treshold), None) => messages_count >= count_treshold,
+                        (Some(count_treshold), Some(bytes_treshold)) => bytes_read >= bytes_treshold || messages_count >= count_treshold,
+                    }
+                };
+                if should_flush {
+                    stdout.flush().await?;
+                    bytes_read = 0;
+                    messages_count = 0;
+                }
+            }
             Ok(Err(err)) => Err(err)?,
             Err(_err) => break,
         }
