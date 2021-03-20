@@ -18,22 +18,25 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Inte
     let mut stdout = BufWriter::new(tokio::io::stdout());
     loop {
         match timeout_at(Instant::now() + timeout, consumer.recv()).await {
-            Ok(Ok(msg)) => match input_config.format {
-                SerdeFormat::Text => {
-                    stdout.write(&msg.key).await?;
-                    stdout.write(input_config.key_delim.as_bytes()).await?;
-                    stdout.write(&msg.payload).await?;
-                    stdout.write(input_config.msg_delim.as_bytes()).await?;
-                },
-                SerdeFormat::Json => {
-                    let x = serde_json::to_string(&msg)?;
-                    stdout.write(x.as_bytes()).await?;
-                    stdout.write(input_config.msg_delim.as_bytes()).await?;
-                },
-                SerdeFormat::Regex(r) => {
-                    unimplemented!("Does not supports {} yet", r);
-                },
-            },
+            Ok(Ok(msg)) => {
+                match input_config.format {
+                    SerdeFormat::Text => {
+                        stdout.write(&msg.key).await?;
+                        stdout.write(input_config.key_delim.as_bytes()).await?;
+                        stdout.write(&msg.payload).await?;
+                        stdout.write(input_config.msg_delim.as_bytes()).await?;
+                    }
+                    SerdeFormat::Json => {
+                        let x = serde_json::to_string(&msg)?;
+                        stdout.write(x.as_bytes()).await?;
+                        stdout.write(input_config.msg_delim.as_bytes()).await?;
+                    }
+                    SerdeFormat::Regex(r) => {
+                        unimplemented!("Does not supports {} yet", r);
+                    }
+                }
+                stdout.flush().await?
+            }
             Ok(Err(err)) => Err(err)?,
             Err(_err) => break,
         }
