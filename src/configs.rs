@@ -13,7 +13,7 @@ const GROUP_ID_DEFAULT: &str = "kafcat";
 const BROKERS_DEFAULT: &str = "localhost:9092";
 const MSG_DELIMITER_DEFAULT: &str = "\n";
 const KEY_DELIMITER_DEFAULT: &str = ":";
-const OFFSET_DEFAULT: &str = "Beginning";
+const OFFSET_DEFAULT: &str = "beginning";
 const FORMAT_DEFAULT: &str = "text";
 
 pub fn group_id() -> Arg<'static> {
@@ -155,7 +155,7 @@ impl FromStr for KafkaOffset {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, String> {
-        Ok(match value {
+        Ok(match value.to_ascii_lowercase().as_str() {
             "beginning" => KafkaOffset::Beginning,
             "end" => KafkaOffset::End,
             "stored" => KafkaOffset::Stored,
