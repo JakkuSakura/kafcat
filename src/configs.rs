@@ -94,8 +94,10 @@ pub fn get_arg_matcher() -> App<'static> {
         .arg(
             Arg::new("log")
                 .long("log")
-                .about("Configure the logging format: Off, Error, Warn, Info, Debug, Trace")
-                .takes_value(true),
+                .about("Configure level of logging")
+                .takes_value(true)
+                // See https://docs.rs/env_logger/0.8.3/env_logger/#enabling-logging
+                .possible_values(&["error", "warn", "info", "debug", "trace"]),
         )
 }
 

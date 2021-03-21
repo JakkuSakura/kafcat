@@ -21,6 +21,7 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Inte
     loop {
         match timeout_at(Instant::now() + timeout, consumer.recv()).await {
             Ok(Ok(msg)) => {
+                log::trace!("Received message:\n{:#?}", msg);
                 match input_config.format {
                     SerdeFormat::Text => {
                         bytes_read += stdout.write(&msg.key).await?;
