@@ -34,48 +34,7 @@ Kafcat is still on early development, so
    cargo build --release
    ```
 
-2. Make sure Kafka is running (We assume at `localhost:9092`). You can use the `docker-compose.yml` below via `docker-compose up`
-
-   ```yaml
-   ---
-   version: '2'
-   services:
-     zookeeper:
-       image: confluentinc/cp-zookeeper:6.1.0
-       hostname: zookeeper
-       container_name: zookeeper
-       ports:
-         - "2181:2181"
-       environment:
-         ZOOKEEPER_CLIENT_PORT: 2181
-         ZOOKEEPER_TICK_TIME: 2000
-   
-     broker:
-       image: confluentinc/cp-kafka:6.1.0
-       hostname: broker
-       container_name: broker
-       depends_on:
-         - zookeeper
-       ports:
-         - "29092:29092"
-         - "9092:9092"
-         - "9101:9101"
-       environment:
-         KAFKA_BROKER_ID: 1
-         KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-         KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-         KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
-         KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-         KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-         KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-         KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-         KAFKA_JMX_PORT: 9101
-         KAFKA_JMX_HOSTNAME: localhost
-   
-   
-   ```
-
-   
+2. Make sure Kafka is running (We assume at `localhost:9092`). You can use`docker-compose -f tests/plain-text-server.yml up`(note that kafka in docker on MacOS is problematic, I couldn't even setup the proper testing environment via docker)
 
 3. Setup the listener, assuming `kafcat` is in current directory
 
@@ -99,7 +58,7 @@ Kafcat is still on early development, so
 
 7. You should see `hello:world` in the consumer terminal.
 
-8. Detailed help can be found at `./kafcat --help`, `./kafcat -C --help`, `./kafcat -P --help`, etc. You can also check out  [kafkacat](https://github.com/edenhill/kafkacat) for reference. 
+8. Detailed help can be found at `./kafcat --help`, `./kafcat -C --help`, `./kafcat -P --help`, etc. You can also check out [kafkacat](https://github.com/edenhill/kafkacat) for reference. 
 
    ```text
    kafcat-consume 
@@ -187,3 +146,6 @@ Kafcat is still on early development, so
    
    ```
 
+## Programming Style
+- `git rebase` onto master branch when possible
+- Squash commits before push
