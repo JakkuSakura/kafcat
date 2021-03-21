@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 
+#[rustfmt::skip]
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct KafkaMessage {
     pub key:       Vec<u8>,

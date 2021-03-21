@@ -23,10 +23,10 @@ async fn main() -> Result<(), KafcatError> {
     match config.working_mode {
         WorkingMode::Consumer => run_async_consume_topic(interface, config).await?,
         WorkingMode::Producer => run_async_produce_topic(interface, config).await?,
-        WorkingMode::Metadata => {},
-        WorkingMode::Query => {},
+        WorkingMode::Metadata => {}
+        WorkingMode::Query => {}
         WorkingMode::Copy => run_async_copy_topic(interface, config).await?,
-        _ => {},
+        _ => {}
     }
     Ok(())
 }
