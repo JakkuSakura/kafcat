@@ -9,10 +9,18 @@ use tokio::io::BufWriter;
 use tokio::time::timeout_at;
 use tokio::time::Instant;
 
-pub async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Interface, config: AppConfig) -> Result<(), KafcatError> {
-    let input_config = config.consumer_kafka.expect("Must specify input kafka config");
-    let consumer: Interface::Consumer = Interface::Consumer::from_config(input_config.clone()).await;
-    consumer.set_offset_and_subscribe(input_config.offset).await?;
+pub async fn run_async_consume_topic<Interface: KafkaInterface>(
+    _interface: Interface,
+    config: AppConfig,
+) -> Result<(), KafcatError> {
+    let input_config = config
+        .consumer_kafka
+        .expect("Must specify input kafka config");
+    let consumer: Interface::Consumer =
+        Interface::Consumer::from_config(input_config.clone()).await;
+    consumer
+        .set_offset_and_subscribe(input_config.offset)
+        .await?;
 
     let timeout = get_delay(input_config.exit_on_done);
     let mut stdout = BufWriter::new(tokio::io::stdout());
@@ -43,7 +51,9 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(_interface: Inte
                         (None, None) => false,
                         (None, Some(bytes_treshold)) => bytes_read >= bytes_treshold,
                         (Some(count_treshold), None) => messages_count >= count_treshold,
-                        (Some(count_treshold), Some(bytes_treshold)) => bytes_read >= bytes_treshold || messages_count >= count_treshold,
+                        (Some(count_treshold), Some(bytes_treshold)) => {
+                            bytes_read >= bytes_treshold || messages_count >= count_treshold
+                        }
                     }
                 };
                 if should_flush {

@@ -25,22 +25,72 @@ pub fn group_id() -> Arg<'static> {
 }
 
 pub fn offset() -> Arg<'static> {
-    Arg::new("offset").short('o').takes_value(true).default_value(r#"beginning"#).long_about(
-        r#"Offset to start consuming from:
+    Arg::new("offset")
+        .short('o')
+        .takes_value(true)
+        .default_value(r#"beginning"#)
+        .long_about(
+            r#"Offset to start consuming from:
                      beginning | end | stored |
                      <value>  (absolute offset) |
                      -<value> (relative offset from end)
                      s@<value> (timestamp in ms to start at)
                      e@<value> (timestamp in ms to stop at (not included))"#,
-    )
+        )
 }
-pub fn topic() -> Arg<'static> { Arg::new("topic").short('t').long("topic").about("Topic").takes_value(true) }
-pub fn brokers() -> Arg<'static> { Arg::new("brokers").short('b').long("brokers").about("Broker list in kafka format").default_value(BROKERS_DEFAULT) }
-pub fn partition() -> Arg<'static> { Arg::new("partition").short('p').long("partition").about("Partition").takes_value(true) }
-pub fn exit() -> Arg<'static> { Arg::new("exit").short('e').long("exit").about("Exit successfully when last message received") }
-pub fn format() -> Arg<'static> { Arg::new("format").short('s').long("format").about("Serialize/Deserialize format").default_value(FORMAT_DEFAULT) }
-pub fn flush_count() -> Arg<'static> { Arg::new("flush-count").long("flush-count").about("Number of messages to receive before flushing stdout").takes_value(true) }
-pub fn flush_bytes() -> Arg<'static> { Arg::new("flush-bytes").long("flush-bytes").about("Size of messages in bytes accumulated before flushing to stdout").takes_value(true) }
+
+pub fn topic() -> Arg<'static> {
+    Arg::new("topic")
+        .short('t')
+        .long("topic")
+        .about("Topic")
+        .takes_value(true)
+}
+
+pub fn brokers() -> Arg<'static> {
+    Arg::new("brokers")
+        .short('b')
+        .long("brokers")
+        .about("Broker list in kafka format")
+        .default_value(BROKERS_DEFAULT)
+}
+
+pub fn partition() -> Arg<'static> {
+    Arg::new("partition")
+        .short('p')
+        .long("partition")
+        .about("Partition")
+        .takes_value(true)
+}
+
+pub fn exit() -> Arg<'static> {
+    Arg::new("exit")
+        .short('e')
+        .long("exit")
+        .about("Exit successfully when last message received")
+}
+
+pub fn format() -> Arg<'static> {
+    Arg::new("format")
+        .short('s')
+        .long("format")
+        .about("Serialize/Deserialize format")
+        .default_value(FORMAT_DEFAULT)
+}
+
+pub fn flush_count() -> Arg<'static> {
+    Arg::new("flush-count")
+        .long("flush-count")
+        .about("Number of messages to receive before flushing stdout")
+        .takes_value(true)
+}
+
+pub fn flush_bytes() -> Arg<'static> {
+    Arg::new("flush-bytes")
+        .long("flush-bytes")
+        .about("Size of messages in bytes accumulated before flushing to stdout")
+        .takes_value(true)
+}
 
 pub fn msg_delimiter() -> Arg<'static> {
     Arg::new("msg-delimiter")
@@ -48,12 +98,14 @@ pub fn msg_delimiter() -> Arg<'static> {
         .about("Delimiter to split input into messages(currently only supports '\\n')")
         .default_value(MSG_DELIMITER_DEFAULT)
 }
+
 pub fn key_delimiter() -> Arg<'static> {
     Arg::new("key-delimiter")
         .short('K')
         .about("Delimiter to split input key and message")
         .default_value(KEY_DELIMITER_DEFAULT)
 }
+
 pub fn consume_subcommand() -> App<'static> {
     App::new("consume").short_flag('C').args(vec![
         brokers(),
@@ -66,14 +118,22 @@ pub fn consume_subcommand() -> App<'static> {
         key_delimiter(),
         format(),
         flush_count(),
-        flush_bytes()
+        flush_bytes(),
     ])
 }
+
 pub fn produce_subcommand() -> App<'static> {
-    App::new("produce")
-        .short_flag('P')
-        .args(vec![brokers(), group_id(), topic().required(true), partition(), msg_delimiter(), key_delimiter(), format()])
+    App::new("produce").short_flag('P').args(vec![
+        brokers(),
+        group_id(),
+        topic().required(true),
+        partition(),
+        msg_delimiter(),
+        key_delimiter(),
+        format(),
+    ])
 }
+
 pub fn copy_subcommand() -> App<'static> {
     // this is not meant to be used directly only for help message
     App::new("copy")
@@ -89,7 +149,11 @@ pub fn get_arg_matcher() -> App<'static> {
         .version(crate_version!())
         .author("Jiangkun Qiu <qiujiangkun@foxmail.com>")
         .about("cat but kafka")
-        .subcommands(vec![consume_subcommand(), produce_subcommand(), copy_subcommand()])
+        .subcommands(vec![
+            consume_subcommand(),
+            produce_subcommand(),
+            copy_subcommand(),
+        ])
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(
             Arg::new("log")
@@ -109,6 +173,7 @@ pub enum WorkingMode {
     Query,
     Copy,
 }
+
 impl WorkingMode {
     pub fn should_have_input_kafka(self) -> bool {
         match self {
@@ -134,7 +199,9 @@ impl WorkingMode {
 }
 
 impl Default for WorkingMode {
-    fn default() -> Self { Self::Unspecified }
+    fn default() -> Self {
+        Self::Unspecified
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -148,7 +215,9 @@ pub enum KafkaOffset {
 }
 
 impl Default for KafkaOffset {
-    fn default() -> Self { Self::Beginning }
+    fn default() -> Self {
+        Self::Beginning
+    }
 }
 
 impl FromStr for KafkaOffset {
@@ -169,7 +238,7 @@ impl FromStr for KafkaOffset {
                 } else {
                     return Err(format!("Cannot parse {} as offset", value));
                 }
-            },
+            }
         })
     }
 }
@@ -192,6 +261,8 @@ impl FromStr for SerdeFormat {
         })
     }
 }
+
+#[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub working_mode:   WorkingMode,
@@ -199,6 +270,7 @@ pub struct AppConfig {
     pub producer_kafka: Option<KafkaProducerConfig>,
     pub log_level:      LevelFilter,
 }
+
 impl AppConfig {
     pub fn from_args(args: Vec<&str>) -> Self {
         let matches = get_arg_matcher().get_matches_from(args);
@@ -220,21 +292,25 @@ impl AppConfig {
             Some(("consume", matches)) => {
                 this.working_mode = WorkingMode::Consumer;
                 this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(matches));
-            },
+            }
             Some(("produce", matches)) => {
                 this.working_mode = WorkingMode::Producer;
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(matches));
-            },
+            }
             Some(("copy", matches)) => {
                 this.working_mode = WorkingMode::Copy;
-                let from = vec!["kafka"].into_iter().chain(matches.values_of("from").expect("Must specify from"));
-                let to = vec!["kafka"].into_iter().chain(matches.values_of("to").expect("Must specify to"));
+                let from = vec!["kafka"]
+                    .into_iter()
+                    .chain(matches.values_of("from").expect("Must specify from"));
+                let to = vec!["kafka"]
+                    .into_iter()
+                    .chain(matches.values_of("to").expect("Must specify to"));
 
                 let consumer = consume_subcommand().get_matches_from(from);
                 let producer = produce_subcommand().get_matches_from(to);
                 this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(&consumer));
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(&producer));
-            },
+            }
             _ => unreachable!(),
         }
 
@@ -242,6 +318,7 @@ impl AppConfig {
     }
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KafkaConsumerConfig {
     pub brokers:            String,
@@ -259,17 +336,28 @@ pub struct KafkaConsumerConfig {
 
 impl KafkaConsumerConfig {
     pub fn from_matches(matches: &ArgMatches) -> KafkaConsumerConfig {
-        let brokers = matches.value_of("brokers").expect("Must specify brokers").to_owned();
+        let brokers = matches
+            .value_of("brokers")
+            .expect("Must specify brokers")
+            .to_owned();
         let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
-        let offset = matches.value_of("offset").map(|x| x.parse().expect("Cannot parse offset")).unwrap_or(KafkaOffset::Beginning);
-        let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
+        let offset = matches
+            .value_of("offset")
+            .map(|x| x.parse().expect("Cannot parse offset"))
+            .unwrap_or(KafkaOffset::Beginning);
+        let partition = matches
+            .value_of("partition")
+            .map(|x| x.parse().expect("Cannot parse partition"));
         let exit = matches.occurrences_of("exit") > 0;
-        let topic = matches.value_of("topic").expect("Must specify topic").to_owned();
+        let topic = matches
+            .value_of("topic")
+            .expect("Must specify topic")
+            .to_owned();
         let format = matches.value_of("format").expect("Must specify format");
         let msg_delim = matches.value_of("msg-delimiter").unwrap().to_owned();
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
-        let msg_count_flush = matches.value_of("flush-count").map(|x|x.parse().unwrap());
-        let msg_bytes_flush = matches.value_of("flush-bytes").map(|x|x.parse().unwrap());
+        let msg_count_flush = matches.value_of("flush-count").map(|x| x.parse().unwrap());
+        let msg_bytes_flush = matches.value_of("flush-bytes").map(|x| x.parse().unwrap());
         KafkaConsumerConfig {
             brokers,
             group_id,
@@ -281,11 +369,13 @@ impl KafkaConsumerConfig {
             msg_delim,
             key_delim,
             msg_count_flush,
-            msg_bytes_flush
+            msg_bytes_flush,
         }
     }
 }
+
 impl Default for KafkaConsumerConfig {
+    #[rustfmt::skip]
     fn default() -> Self {
         KafkaConsumerConfig {
             brokers:            BROKERS_DEFAULT.to_string(),
@@ -303,6 +393,7 @@ impl Default for KafkaConsumerConfig {
     }
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KafkaProducerConfig {
     pub brokers:   String,
@@ -315,10 +406,18 @@ pub struct KafkaProducerConfig {
 }
 impl KafkaProducerConfig {
     pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
-        let brokers = matches.value_of("brokers").expect("Must specify brokers").to_owned();
+        let brokers = matches
+            .value_of("brokers")
+            .expect("Must specify brokers")
+            .to_owned();
         let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
-        let partition = matches.value_of("partition").map(|x| x.parse().expect("Cannot parse partition"));
-        let topic = matches.value_of("topic").expect("Must specify topic").to_owned();
+        let partition = matches
+            .value_of("partition")
+            .map(|x| x.parse().expect("Cannot parse partition"));
+        let topic = matches
+            .value_of("topic")
+            .expect("Must specify topic")
+            .to_owned();
         let msg_delim = matches.value_of("msg-delimiter").unwrap().to_owned();
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
@@ -333,7 +432,9 @@ impl KafkaProducerConfig {
         }
     }
 }
+
 impl Default for KafkaProducerConfig {
+    #[rustfmt::skip]
     fn default() -> Self {
         KafkaProducerConfig {
             brokers:   BROKERS_DEFAULT.to_string(),
@@ -355,46 +456,72 @@ mod tests {
 
     #[test]
     fn consumer_config() {
-        let config = AppConfig::from_args(vec!["kafcat", "-C", "-b", "localhost", "-t", "topic", "-e"]);
-        assert_eq!(config.consumer_kafka.unwrap(), KafkaConsumerConfig {
-            brokers: "localhost".to_string(),
-            group_id: "kafcat".to_string(),
-            offset: KafkaOffset::Beginning,
-            partition: None,
-            topic: "topic".to_string(),
-            exit_on_done: true,
-            ..Default::default()
-        })
+        let config =
+            AppConfig::from_args(vec!["kafcat", "-C", "-b", "localhost", "-t", "topic", "-e"]);
+        assert_eq!(
+            config.consumer_kafka.unwrap(),
+            KafkaConsumerConfig {
+                brokers: "localhost".to_string(),
+                group_id: "kafcat".to_string(),
+                offset: KafkaOffset::Beginning,
+                partition: None,
+                topic: "topic".to_string(),
+                exit_on_done: true,
+                ..Default::default()
+            }
+        )
     }
     #[test]
     fn producer_config() {
         let config = AppConfig::from_args(vec!["kafcat", "-P", "-b", "localhost", "-t", "topic"]);
-        assert_eq!(config.producer_kafka.unwrap(), KafkaProducerConfig {
-            brokers: "localhost".to_string(),
-            group_id: "kafcat".to_string(),
-            partition: None,
-            topic: "topic".to_string(),
-            ..Default::default()
-        })
+        assert_eq!(
+            config.producer_kafka.unwrap(),
+            KafkaProducerConfig {
+                brokers: "localhost".to_string(),
+                group_id: "kafcat".to_string(),
+                partition: None,
+                topic: "topic".to_string(),
+                ..Default::default()
+            }
+        )
     }
     #[test]
     fn copy_config() {
-        let config = AppConfig::from_args(vec!["kafcat", "copy", "-b", "localhost1", "-t", "topic1", "-e", "--", "-b", "localhost2", "-t", "topic2"]);
-        assert_eq!(config.consumer_kafka.unwrap(), KafkaConsumerConfig {
-            brokers: "localhost1".to_string(),
-            group_id: "kafcat".to_string(),
-            offset: KafkaOffset::Beginning,
-            partition: None,
-            topic: "topic1".to_string(),
-            exit_on_done: true,
-            ..Default::default()
-        });
-        assert_eq!(config.producer_kafka.unwrap(), KafkaProducerConfig {
-            brokers: "localhost2".to_string(),
-            group_id: "kafcat".to_string(),
-            partition: None,
-            topic: "topic2".to_string(),
-            ..Default::default()
-        });
+        let config = AppConfig::from_args(vec![
+            "kafcat",
+            "copy",
+            "-b",
+            "localhost1",
+            "-t",
+            "topic1",
+            "-e",
+            "--",
+            "-b",
+            "localhost2",
+            "-t",
+            "topic2",
+        ]);
+        assert_eq!(
+            config.consumer_kafka.unwrap(),
+            KafkaConsumerConfig {
+                brokers: "localhost1".to_string(),
+                group_id: "kafcat".to_string(),
+                offset: KafkaOffset::Beginning,
+                partition: None,
+                topic: "topic1".to_string(),
+                exit_on_done: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            config.producer_kafka.unwrap(),
+            KafkaProducerConfig {
+                brokers: "localhost2".to_string(),
+                group_id: "kafcat".to_string(),
+                partition: None,
+                topic: "topic2".to_string(),
+                ..Default::default()
+            }
+        );
     }
 }

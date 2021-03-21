@@ -30,7 +30,9 @@ pub struct RdkafkaConsumer {
     config: KafkaConsumerConfig,
 }
 impl RdkafkaConsumer {
-    pub fn new(stream: StreamConsumer, config: KafkaConsumerConfig) -> Self { RdkafkaConsumer { stream, config } }
+    pub fn new(stream: StreamConsumer, config: KafkaConsumerConfig) -> Self {
+        RdkafkaConsumer { stream, config }
+    }
 }
 
 #[async_trait]
@@ -73,20 +75,29 @@ impl KafkaConsumer for RdkafkaConsumer {
                     Ok(tpl_b.find_partition(&topic, partition).unwrap().offset())
                 });
                 r?
-            },
+            }
         };
 
-        tpl.add_partition_offset(&self.config.topic, partition, offset).unwrap();
+        tpl.add_partition_offset(&self.config.topic, partition, offset)
+            .unwrap();
         self.stream.assign(&tpl)?;
         Ok(())
     }
 
-    async fn get_offset(&self) -> Result<i64> { unimplemented!() }
+    async fn get_offset(&self) -> Result<i64> {
+        unimplemented!()
+    }
 
     async fn get_watermarks(&self) -> Result<(i64, i64)> {
         let stream = &self.stream;
         let config = self.config.clone();
-        let watermarks = block_in_place(|| stream.fetch_watermarks(&config.topic, config.partition.unwrap_or(0), Duration::from_secs(3)))?;
+        let watermarks = block_in_place(|| {
+            stream.fetch_watermarks(
+                &config.topic,
+                config.partition.unwrap_or(0),
+                Duration::from_secs(3),
+            )
+        })?;
         Ok(watermarks)
     }
 
@@ -102,14 +113,14 @@ impl KafkaConsumer for RdkafkaConsumer {
                     timestamp: msg.timestamp().to_millis().unwrap(),
                     ..KafkaMessage::default() // TODO headers
                 })
-            },
+            }
             Err(err) => Err(anyhow::Error::from(err).into()),
         }
     }
 }
 pub struct RdkafkaProducer {
     producer: FutureProducer,
-    config:   KafkaProducerConfig,
+    config: KafkaProducerConfig,
 }
 
 #[async_trait]
@@ -123,7 +134,10 @@ impl KafkaProducer for RdkafkaProducer {
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error");
-        RdkafkaProducer { producer, config: kafka_config }
+        RdkafkaProducer {
+            producer,
+            config: kafka_config,
+        }
     }
 
     async fn write_one(&self, msg: KafkaMessage) -> Result<()> {
@@ -136,7 +150,10 @@ impl KafkaProducer for RdkafkaProducer {
         if payload.len() > 0 {
             record = record.payload(&payload)
         }
-        self.producer.send(record, Duration::from_secs(0)).await.map_err(|(err, _msg)| anyhow::Error::from(err))?;
+        self.producer
+            .send(record, Duration::from_secs(0))
+            .await
+            .map_err(|(err, _msg)| anyhow::Error::from(err))?;
         Ok(())
     }
 }
