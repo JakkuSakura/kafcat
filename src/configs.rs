@@ -144,6 +144,13 @@ pub fn copy_subcommand() -> App<'static> {
         .about("Copy mode accepts two parts of arguments <from> and <to>, the two parts are separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer mode.")
 }
 
+pub fn metadata_subcommand() -> App<'static> {
+    // this is not meant to be used directly only for help message
+    App::new("metadata")
+        .about("Prints metadata information.")
+        .args(vec![brokers(), group_id()])
+}
+
 pub fn get_arg_matcher() -> App<'static> {
     App::new("kafcat")
         .version(crate_version!())
@@ -153,6 +160,7 @@ pub fn get_arg_matcher() -> App<'static> {
             consume_subcommand(),
             produce_subcommand(),
             copy_subcommand(),
+            metadata_subcommand(),
         ])
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(
@@ -267,10 +275,11 @@ impl FromStr for SerdeFormat {
 #[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub working_mode:   WorkingMode,
-    pub consumer_kafka: Option<KafkaConsumerConfig>,
-    pub producer_kafka: Option<KafkaProducerConfig>,
-    pub log_level:      LevelFilter,
+    pub working_mode    :   WorkingMode,
+    pub consumer_kafka  :   Option<KafkaConsumerConfig>,
+    pub producer_kafka  :   Option<KafkaProducerConfig>,
+    pub metadata_kafka  :   Option<KafkaMetadataConfig>,
+    pub log_level       :   LevelFilter,
 }
 
 impl AppConfig {
@@ -288,6 +297,7 @@ impl AppConfig {
             working_mode: WorkingMode::Unspecified,
             consumer_kafka: None,
             producer_kafka: None,
+            metadata_kafka: None,
             log_level,
         };
         match matches.subcommand() {
@@ -312,6 +322,10 @@ impl AppConfig {
                 let producer = produce_subcommand().get_matches_from(to);
                 this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(&consumer));
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(&producer));
+            }
+            Some(("metadata", matches)) => {
+                this.working_mode = WorkingMode::Metadata;
+                this.metadata_kafka = Some(KafkaMetadataConfig::from_matches(matches));
             }
             _ => unreachable!(),
         }
@@ -406,6 +420,7 @@ pub struct KafkaProducerConfig {
     pub key_delim: String,
     pub format:    SerdeFormat,
 }
+
 impl KafkaProducerConfig {
     pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
         let brokers = matches
@@ -449,6 +464,25 @@ impl Default for KafkaProducerConfig {
         }
     }
 }
+
+#[rustfmt::skip]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct KafkaMetadataConfig {
+    pub brokers:            String,
+    pub group_id:           String,
+}
+
+impl KafkaMetadataConfig {
+    pub fn from_matches(matches: &ArgMatches) -> KafkaMetadataConfig {
+        let brokers = matches
+            .value_of("brokers")
+            .expect("Must specify brokers")
+            .to_owned();
+        let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
+        KafkaMetadataConfig { brokers, group_id }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::configs::AppConfig;
