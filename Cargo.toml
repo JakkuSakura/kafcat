@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rdkafka = { path = "../rust-rdkafka" }
+rdkafka = "0.25.0"
 kafka = "0.8.0"
 clap = "3.0.0-beta.2" #  wait for 3.0.0
 log = "0.4.14"
