@@ -63,8 +63,8 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(
                     messages_count = 0;
                 }
             }
-            Ok(Err(err)) => Err(err)?,
-            Err(_err) => break,
+            Ok(Err(err)) => return Err(err),
+            Err(_) => break,
         }
     }
     stdout.flush().await?;
