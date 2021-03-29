@@ -280,7 +280,7 @@ impl AppConfig {
         let kafcat_log_env = std::env::var("KAFCAT_LOG").ok();
         let log_level = matches
             .value_of("log")
-            .or(kafcat_log_env.as_ref().map(|x| x.as_str()))
+            .or_else(|| kafcat_log_env.as_deref())
             .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
             .unwrap_or(LevelFilter::Info);
 
@@ -424,8 +424,8 @@ impl KafkaProducerConfig {
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
         KafkaProducerConfig {
-            brokers: brokers.to_owned(),
-            group_id: group_id.clone(),
+            brokers,
+            group_id,
             partition,
             topic,
             msg_delim,
