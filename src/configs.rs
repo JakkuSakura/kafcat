@@ -5,6 +5,8 @@ use clap::Arg;
 use clap::ArgMatches;
 use log::LevelFilter;
 use regex::Regex;
+use serde::Deserialize;
+use serde::Serialize;
 use std::str::FromStr;
 use strum::Display;
 use strum::EnumString;
@@ -449,12 +451,58 @@ impl Default for KafkaProducerConfig {
         }
     }
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct ClusterConfig {
+    pub name: String,
+    pub brokers: Vec<String>,
+    #[serde(rename = "SASL")]
+    pub sasl: Option<SaslConfig>,
+    #[serde(rename = "TLS")]
+    pub tls: Option<TlsConfig>,
+    #[serde(rename = "security-protocol")]
+    #[serde(default)]
+    pub security_protocol: String,
+    #[serde(default)]
+    pub version: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ClustersConfig {
+    pub clusters: Vec<ClusterConfig>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TlsConfig {
+    #[serde(default)]
+    pub cafile: String,
+    #[serde(default)]
+    pub clientfile: String,
+    #[serde(default)]
+    pub clientkeyfile: String,
+    #[serde(default)]
+    pub insecure: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SaslConfig {
+    mechanism: String,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    password: String,
+    #[serde(rename = "clientID")]
+    #[serde(default)]
+    client_id: String,
+    #[serde(rename = "clientSecret")]
+    #[serde(default)]
+    client_secret: String,
+    #[serde(rename = "tokenURL")]
+    #[serde(default)]
+    token_url: String,
+}
 #[cfg(test)]
 mod tests {
-    use crate::configs::AppConfig;
-    use crate::configs::KafkaConsumerConfig;
-    use crate::configs::KafkaOffset;
-    use crate::configs::KafkaProducerConfig;
+    use super::*;
 
     #[test]
     fn consumer_config() {
@@ -526,4 +574,22 @@ mod tests {
             }
         );
     }
+    macro_rules! test_read_clusters_config {
+        ($fn_name: ident, $name: ident) => {
+            #[test]
+            fn $fn_name() {
+                let config = include_str!(concat!("../examples/", stringify!($name), ".yaml"));
+                let config: ClustersConfig =
+                    serde_yaml::from_str(config).expect("Cannot parse config");
+                drop(config);
+            }
+        };
+    }
+    test_read_clusters_config!(test_read_config_basic, basic);
+    test_read_clusters_config!(test_read_config_sasl_plaintext, sasl_plaintext);
+    test_read_clusters_config!(test_read_config_sasl_ssl, sasl_ssl);
+    test_read_clusters_config!(test_read_config_sasl_ssl_custom_ca, sasl_ssl_custom_ca);
+    test_read_clusters_config!(test_read_config_sasl_ssl_insecure, sasl_ssl_insecure);
+    test_read_clusters_config!(test_read_config_sasl_ssl_scram, sasl_ssl_scram);
+    test_read_clusters_config!(test_read_config_ssl_keys, ssl_keys);
 }
