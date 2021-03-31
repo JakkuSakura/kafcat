@@ -34,8 +34,8 @@ pub async fn run_async_copy_topic<Interface: KafkaInterface>(
             Ok(Ok(msg)) => {
                 producer.write_one(msg).await?;
             }
-            Ok(Err(err)) => Err(err)?,
-            Err(_err) => break,
+            Ok(Err(err)) => return Err(err),
+            Err(_) => break,
         }
     }
     Ok(())

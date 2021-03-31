@@ -118,8 +118,8 @@ impl KafkaConsumer for RdkafkaConsumer {
             Ok(x) => {
                 let msg = x.detach();
                 Ok(KafkaMessage {
-                    key: msg.key().map(Vec::from).unwrap_or(vec![]),
-                    payload: msg.payload().map(Vec::from).unwrap_or(vec![]),
+                    key: msg.key().map(Vec::from).unwrap_or_default(),
+                    payload: msg.payload().map(Vec::from).unwrap_or_default(),
                     timestamp: msg.timestamp().to_millis().unwrap(),
                     ..KafkaMessage::default() // TODO headers
                 })
@@ -153,11 +153,11 @@ impl KafkaProducer for RdkafkaProducer {
     async fn write_one(&self, msg: KafkaMessage) -> Result<()> {
         let mut record = FutureRecord::to(&self.config.topic);
         let key = msg.key;
-        if key.len() > 0 {
+        if !key.is_empty() {
             record = record.key(&key);
         }
         let payload = msg.payload;
-        if payload.len() > 0 {
+        if !payload.is_empty() {
             record = record.payload(&payload)
         }
         self.producer

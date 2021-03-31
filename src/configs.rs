@@ -5,6 +5,8 @@ use clap::Arg;
 use clap::ArgMatches;
 use log::LevelFilter;
 use regex::Regex;
+use serde::Deserialize;
+use serde::Serialize;
 use std::str::FromStr;
 use strum::Display;
 use strum::EnumString;
@@ -134,6 +136,14 @@ pub fn produce_subcommand() -> App<'static> {
     ])
 }
 
+pub fn metadata_subcommand() -> App<'static> {
+    // this is not meant to be used directly only for help message
+    App::new("metadata")
+        .short_flag('M')
+        .about("Prints metadata information")
+        .args(vec![brokers(), group_id()])
+}
+
 pub fn copy_subcommand() -> App<'static> {
     // this is not meant to be used directly only for help message
     App::new("copy")
@@ -142,13 +152,6 @@ pub fn copy_subcommand() -> App<'static> {
         .arg(Arg::new("from").multiple(true).required(true))
         .arg(Arg::new("to").multiple(true).last(true).required(true))
         .about("Copy mode accepts two parts of arguments <from> and <to>, the two parts are separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer mode.")
-}
-
-pub fn metadata_subcommand() -> App<'static> {
-    // this is not meant to be used directly only for help message
-    App::new("metadata")
-        .about("Prints metadata information.")
-        .args(vec![brokers(), group_id()])
 }
 
 pub fn get_arg_matcher() -> App<'static> {
@@ -275,11 +278,11 @@ impl FromStr for SerdeFormat {
 #[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub working_mode    :   WorkingMode,
-    pub consumer_kafka  :   Option<KafkaConsumerConfig>,
-    pub producer_kafka  :   Option<KafkaProducerConfig>,
+    pub working_mode:   WorkingMode,
+    pub consumer_kafka: Option<KafkaConsumerConfig>,
+    pub producer_kafka: Option<KafkaProducerConfig>,
     pub metadata_kafka  :   Option<KafkaMetadataConfig>,
-    pub log_level       :   LevelFilter,
+    pub log_level:      LevelFilter,
 }
 
 impl AppConfig {
@@ -289,7 +292,7 @@ impl AppConfig {
         let kafcat_log_env = std::env::var("KAFCAT_LOG").ok();
         let log_level = matches
             .value_of("log")
-            .or(kafcat_log_env.as_ref().map(|x| x.as_str()))
+            .or_else(|| kafcat_log_env.as_deref())
             .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
             .unwrap_or(LevelFilter::Info);
 
@@ -309,6 +312,10 @@ impl AppConfig {
                 this.working_mode = WorkingMode::Producer;
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(matches));
             }
+            Some(("metadata", matches)) => {
+                this.working_mode = WorkingMode::Metadata;
+                this.metadata_kafka = Some(KafkaMetadataConfig::from_matches(matches));
+            }
             Some(("copy", matches)) => {
                 this.working_mode = WorkingMode::Copy;
                 let from = vec!["kafka"]
@@ -322,10 +329,6 @@ impl AppConfig {
                 let producer = produce_subcommand().get_matches_from(to);
                 this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(&consumer));
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(&producer));
-            }
-            Some(("metadata", matches)) => {
-                this.working_mode = WorkingMode::Metadata;
-                this.metadata_kafka = Some(KafkaMetadataConfig::from_matches(matches));
             }
             _ => unreachable!(),
         }
@@ -439,8 +442,8 @@ impl KafkaProducerConfig {
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
         KafkaProducerConfig {
-            brokers: brokers.to_owned(),
-            group_id: group_id.clone(),
+            brokers,
+            group_id,
             partition,
             topic,
             msg_delim,
@@ -465,11 +468,10 @@ impl Default for KafkaProducerConfig {
     }
 }
 
-#[rustfmt::skip]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KafkaMetadataConfig {
-    pub brokers:            String,
-    pub group_id:           String,
+    pub brokers: String,
+    pub group_id: String,
 }
 
 impl KafkaMetadataConfig {
@@ -483,12 +485,57 @@ impl KafkaMetadataConfig {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ClusterConfig {
+    pub name: String,
+    pub brokers: Vec<String>,
+    #[serde(rename = "SASL")]
+    pub sasl: Option<SaslConfig>,
+    #[serde(rename = "TLS")]
+    pub tls: Option<TlsConfig>,
+    #[serde(rename = "security-protocol")]
+    #[serde(default)]
+    pub security_protocol: String,
+    #[serde(default)]
+    pub version: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ClustersConfig {
+    pub clusters: Vec<ClusterConfig>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TlsConfig {
+    #[serde(default)]
+    pub cafile: String,
+    #[serde(default)]
+    pub clientfile: String,
+    #[serde(default)]
+    pub clientkeyfile: String,
+    #[serde(default)]
+    pub insecure: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SaslConfig {
+    mechanism: String,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    password: String,
+    #[serde(rename = "clientID")]
+    #[serde(default)]
+    client_id: String,
+    #[serde(rename = "clientSecret")]
+    #[serde(default)]
+    client_secret: String,
+    #[serde(rename = "tokenURL")]
+    #[serde(default)]
+    token_url: String,
+}
 #[cfg(test)]
 mod tests {
-    use crate::configs::AppConfig;
-    use crate::configs::KafkaConsumerConfig;
-    use crate::configs::KafkaOffset;
-    use crate::configs::KafkaProducerConfig;
+    use super::*;
 
     #[test]
     fn consumer_config() {
@@ -560,4 +607,22 @@ mod tests {
             }
         );
     }
+    macro_rules! test_read_clusters_config {
+        ($fn_name: ident, $name: ident) => {
+            #[test]
+            fn $fn_name() {
+                let config = include_str!(concat!("../examples/", stringify!($name), ".yaml"));
+                let config: ClustersConfig =
+                    serde_yaml::from_str(config).expect("Cannot parse config");
+                drop(config);
+            }
+        };
+    }
+    test_read_clusters_config!(test_read_config_basic, basic);
+    test_read_clusters_config!(test_read_config_sasl_plaintext, sasl_plaintext);
+    test_read_clusters_config!(test_read_config_sasl_ssl, sasl_ssl);
+    test_read_clusters_config!(test_read_config_sasl_ssl_custom_ca, sasl_ssl_custom_ca);
+    test_read_clusters_config!(test_read_config_sasl_ssl_insecure, sasl_ssl_insecure);
+    test_read_clusters_config!(test_read_config_sasl_ssl_scram, sasl_ssl_scram);
+    test_read_clusters_config!(test_read_config_ssl_keys, ssl_keys);
 }
