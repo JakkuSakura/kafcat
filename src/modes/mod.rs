@@ -1,9 +1,11 @@
 mod consume;
 mod copy;
+mod metadata;
 mod produce;
 
 pub use consume::*;
 pub use copy::*;
+pub use metadata::*;
 pub use produce::*;
 
 use tokio::time::Duration;

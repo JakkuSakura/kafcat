@@ -21,7 +21,6 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(
     consumer
         .set_offset_and_subscribe(input_config.offset)
         .await?;
-
     let timeout = get_delay(input_config.exit_on_done);
     let mut stdout = BufWriter::new(tokio::io::stdout());
     let mut bytes_read = 0;

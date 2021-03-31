@@ -136,6 +136,14 @@ pub fn produce_subcommand() -> App<'static> {
     ])
 }
 
+pub fn metadata_subcommand() -> App<'static> {
+    // this is not meant to be used directly only for help message
+    App::new("metadata")
+        .short_flag('M')
+        .about("Prints metadata information")
+        .args(vec![brokers(), group_id()])
+}
+
 pub fn copy_subcommand() -> App<'static> {
     // this is not meant to be used directly only for help message
     App::new("copy")
@@ -155,6 +163,7 @@ pub fn get_arg_matcher() -> App<'static> {
             consume_subcommand(),
             produce_subcommand(),
             copy_subcommand(),
+            metadata_subcommand(),
         ])
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(
@@ -272,6 +281,7 @@ pub struct AppConfig {
     pub working_mode:   WorkingMode,
     pub consumer_kafka: Option<KafkaConsumerConfig>,
     pub producer_kafka: Option<KafkaProducerConfig>,
+    pub metadata_kafka  :   Option<KafkaMetadataConfig>,
     pub log_level:      LevelFilter,
 }
 
@@ -290,6 +300,7 @@ impl AppConfig {
             working_mode: WorkingMode::Unspecified,
             consumer_kafka: None,
             producer_kafka: None,
+            metadata_kafka: None,
             log_level,
         };
         match matches.subcommand() {
@@ -300,6 +311,10 @@ impl AppConfig {
             Some(("produce", matches)) => {
                 this.working_mode = WorkingMode::Producer;
                 this.producer_kafka = Some(KafkaProducerConfig::from_matches(matches));
+            }
+            Some(("metadata", matches)) => {
+                this.working_mode = WorkingMode::Metadata;
+                this.metadata_kafka = Some(KafkaMetadataConfig::from_matches(matches));
             }
             Some(("copy", matches)) => {
                 this.working_mode = WorkingMode::Copy;
@@ -408,6 +423,7 @@ pub struct KafkaProducerConfig {
     pub key_delim: String,
     pub format:    SerdeFormat,
 }
+
 impl KafkaProducerConfig {
     pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
         let brokers = matches
@@ -449,6 +465,23 @@ impl Default for KafkaProducerConfig {
             key_delim: KEY_DELIMITER_DEFAULT.to_string(),
             format:    SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct KafkaMetadataConfig {
+    pub brokers: String,
+    pub group_id: String,
+}
+
+impl KafkaMetadataConfig {
+    pub fn from_matches(matches: &ArgMatches) -> KafkaMetadataConfig {
+        let brokers = matches
+            .value_of("brokers")
+            .expect("Must specify brokers")
+            .to_owned();
+        let group_id = matches.value_of("group-id").unwrap_or("kafcat").to_owned();
+        KafkaMetadataConfig { brokers, group_id }
     }
 }
 

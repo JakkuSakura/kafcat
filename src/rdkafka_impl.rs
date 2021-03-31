@@ -50,7 +50,17 @@ impl KafkaConsumer for RdkafkaConsumer {
             .set_log_level(RDKafkaLogLevel::Debug)
             .create()
             .expect("Consumer creation failed");
-
+        let metadata = stream
+            .fetch_metadata(None, rdkafka::util::Timeout::Never)
+            .unwrap();
+        println!(
+            "metadata:{:#?}",
+            metadata
+                .topics()
+                .iter()
+                .map(|x| x.name())
+                .collect::<Vec<_>>()
+        );
         RdkafkaConsumer { stream, config }
     }
 
