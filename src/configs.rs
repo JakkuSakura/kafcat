@@ -55,7 +55,7 @@ pub fn brokers() -> Arg<'static> {
         .short('b')
         .long("brokers")
         .about(
-            "Broker list. This could also be a cluster name in a config file specified by\
+            "Broker list. This could also be a cluster name in a config file specified by \
          --config conf.yaml (default ~/.kaf/config)",
         )
         .default_value(BROKERS_DEFAULT)
@@ -63,11 +63,27 @@ pub fn brokers() -> Arg<'static> {
 
 pub fn config() -> Arg<'static> {
     Arg::new("config")
-        .short('c')
-        .long("config")
+        .short('F')
+        .long("config-file")
         .default_value("~/.kaf/config")
+        .about(
+            "Specify the config file path. The config file should be in yaml/properties format.\
+        If it's yaml, the config is used to pick up a cluster, and you have to specify a broker. \
+        When it's properties file, there is no need to specify a broker",
+        )
+}
+
+pub fn extra_config() -> Arg<'static> {
+    Arg::new("extra-config")
+        .short('X')
+        .about(
+            "configs that are passed to librdkafka directly. Format: -X key1=val1 -X key2=val2. \
+        For copy subcommand: 1) Set different pairs for producer and consumer via: \
+        ./kafcat --cp -X key1=val1 <from> -- -X key2=val2 <to>; 2) Set the same pairs for producer \
+        and consumer via: ./kafcat -X key1=val1 -X key2=val2 --cp <from> -- <to>",
+        )
         .takes_value(true)
-        .about("Specify the config file path. The config file should be in yaml format")
+        .multiple(true)
 }
 
 pub fn partition() -> Arg<'static> {
@@ -134,6 +150,8 @@ pub fn consume_subcommand() -> App<'static> {
         format(),
         flush_count(),
         flush_bytes(),
+        config(),
+        extra_config(),
     ])
 }
 
@@ -146,6 +164,8 @@ pub fn produce_subcommand() -> App<'static> {
         msg_delimiter(),
         key_delimiter(),
         format(),
+        config(),
+        extra_config(),
     ])
 }
 
@@ -175,6 +195,7 @@ pub fn get_arg_matcher() -> App<'static> {
         ])
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(config())
+        .arg(extra_config())
         .arg(
             Arg::new("log")
                 .long("log")
