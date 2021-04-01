@@ -41,9 +41,10 @@ impl KafkaConsumer for RdkafkaConsumer {
     where
         Self: Sized,
     {
+        // TODO enable SSL and SASL
         let stream: StreamConsumer = ClientConfig::new()
             .set("group.id", &config.group_id)
-            .set("bootstrap.servers", &config.brokers)
+            .set("bootstrap.servers", &config.auth.brokers.join(" "))
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
@@ -129,8 +130,9 @@ impl KafkaProducer for RdkafkaProducer {
     where
         Self: Sized,
     {
+        // TODO enable SSL and SASL
         let producer = ClientConfig::new()
-            .set("bootstrap.servers", &kafka_config.brokers)
+            .set("bootstrap.servers", &kafka_config.auth.brokers.join(" "))
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error");

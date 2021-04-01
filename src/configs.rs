@@ -7,6 +7,7 @@ use log::LevelFilter;
 use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fmt::Debug;
 use std::str::FromStr;
 use strum::Display;
 use strum::EnumString;
@@ -53,8 +54,20 @@ pub fn brokers() -> Arg<'static> {
     Arg::new("brokers")
         .short('b')
         .long("brokers")
-        .about("Broker list in kafka format")
+        .about(
+            "Broker list. This could also be a cluster name in a config file specified by\
+         --config conf.yaml (default ~/.kaf/config)",
+        )
         .default_value(BROKERS_DEFAULT)
+}
+
+pub fn config() -> Arg<'static> {
+    Arg::new("config")
+        .short('c')
+        .long("config")
+        .default_value("~/.kaf/config")
+        .takes_value(true)
+        .about("Specify the config file path. The config file should be in yaml format")
 }
 
 pub fn partition() -> Arg<'static> {
@@ -143,7 +156,11 @@ pub fn copy_subcommand() -> App<'static> {
         .alias("--cp")
         .arg(Arg::new("from").multiple(true).required(true))
         .arg(Arg::new("to").multiple(true).last(true).required(true))
-        .about("Copy mode accepts two parts of arguments <from> and <to>, the two parts are separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer mode.")
+        .about(
+            "Copy mode accepts two parts of arguments <from> and <to>, the two parts are \
+        separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer \
+        mode.",
+        )
 }
 
 pub fn get_arg_matcher() -> App<'static> {
@@ -157,6 +174,7 @@ pub fn get_arg_matcher() -> App<'static> {
             copy_subcommand(),
         ])
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .arg(config())
         .arg(
             Arg::new("log")
                 .long("log")
@@ -266,13 +284,12 @@ impl FromStr for SerdeFormat {
     }
 }
 
-#[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub working_mode:   WorkingMode,
+    pub working_mode: WorkingMode,
     pub consumer_kafka: Option<KafkaConsumerConfig>,
     pub producer_kafka: Option<KafkaProducerConfig>,
-    pub log_level:      LevelFilter,
+    pub log_level: LevelFilter,
 }
 
 impl AppConfig {
@@ -286,6 +303,10 @@ impl AppConfig {
             .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
             .unwrap_or(LevelFilter::Info);
 
+        let clusters_config = ClustersConfig::from_path_yaml(&shellexpand::tilde(
+            matches.value_of("config").unwrap(),
+        ));
+
         let mut this = AppConfig {
             working_mode: WorkingMode::Unspecified,
             consumer_kafka: None,
@@ -295,11 +316,17 @@ impl AppConfig {
         match matches.subcommand() {
             Some(("consume", matches)) => {
                 this.working_mode = WorkingMode::Consumer;
-                this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(matches));
+                this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(
+                    matches,
+                    clusters_config.as_ref().ok(),
+                ));
             }
             Some(("produce", matches)) => {
                 this.working_mode = WorkingMode::Producer;
-                this.producer_kafka = Some(KafkaProducerConfig::from_matches(matches));
+                this.producer_kafka = Some(KafkaProducerConfig::from_matches(
+                    matches,
+                    clusters_config.as_ref().ok(),
+                ));
             }
             Some(("copy", matches)) => {
                 this.working_mode = WorkingMode::Copy;
@@ -312,8 +339,14 @@ impl AppConfig {
 
                 let consumer = consume_subcommand().get_matches_from(from);
                 let producer = produce_subcommand().get_matches_from(to);
-                this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(&consumer));
-                this.producer_kafka = Some(KafkaProducerConfig::from_matches(&producer));
+                this.consumer_kafka = Some(KafkaConsumerConfig::from_matches(
+                    &consumer,
+                    clusters_config.as_ref().ok(),
+                ));
+                this.producer_kafka = Some(KafkaProducerConfig::from_matches(
+                    &producer,
+                    clusters_config.as_ref().ok(),
+                ));
             }
             _ => unreachable!(),
         }
@@ -322,24 +355,26 @@ impl AppConfig {
     }
 }
 
-#[rustfmt::skip]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KafkaConsumerConfig {
-    pub brokers:            String,
-    pub group_id:           String,
-    pub offset:             KafkaOffset,
-    pub partition:          Option<i32>,
-    pub topic:              String,
-    pub exit_on_done:       bool,
-    pub msg_delim:          String,
-    pub key_delim:          String,
-    pub format:             SerdeFormat,
-    pub msg_count_flush:    Option<usize>,
-    pub msg_bytes_flush:    Option<usize>
+    pub auth: KafkaAuthConfig,
+    pub group_id: String,
+    pub offset: KafkaOffset,
+    pub partition: Option<i32>,
+    pub topic: String,
+    pub exit_on_done: bool,
+    pub msg_delim: String,
+    pub key_delim: String,
+    pub format: SerdeFormat,
+    pub msg_count_flush: Option<usize>,
+    pub msg_bytes_flush: Option<usize>,
 }
 
 impl KafkaConsumerConfig {
-    pub fn from_matches(matches: &ArgMatches) -> KafkaConsumerConfig {
+    pub fn from_matches(
+        matches: &ArgMatches,
+        clusters: Option<&ClustersConfig>,
+    ) -> KafkaConsumerConfig {
         let brokers = matches
             .value_of("brokers")
             .expect("Must specify brokers")
@@ -363,7 +398,7 @@ impl KafkaConsumerConfig {
         let msg_count_flush = matches.value_of("flush-count").map(|x| x.parse().unwrap());
         let msg_bytes_flush = matches.value_of("flush-bytes").map(|x| x.parse().unwrap());
         KafkaConsumerConfig {
-            brokers,
+            auth: ClustersConfig::find_host(clusters, &brokers),
             group_id,
             offset,
             partition,
@@ -379,37 +414,38 @@ impl KafkaConsumerConfig {
 }
 
 impl Default for KafkaConsumerConfig {
-    #[rustfmt::skip]
     fn default() -> Self {
         KafkaConsumerConfig {
-            brokers:            BROKERS_DEFAULT.to_string(),
-            group_id:           GROUP_ID_DEFAULT.to_string(),
-            offset:             KafkaOffset::from_str(OFFSET_DEFAULT).unwrap(),
-            partition:          None,
-            topic:              "".to_string(),
-            format:             SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
-            exit_on_done:       false,
-            msg_delim:          MSG_DELIMITER_DEFAULT.to_string(),
-            key_delim:          KEY_DELIMITER_DEFAULT.to_string(),
-            msg_count_flush:    None,
-            msg_bytes_flush:    None
+            auth: KafkaAuthConfig::plaintext(BROKERS_DEFAULT),
+            group_id: GROUP_ID_DEFAULT.to_string(),
+            offset: KafkaOffset::from_str(OFFSET_DEFAULT).unwrap(),
+            partition: None,
+            topic: "".to_string(),
+            format: SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
+            exit_on_done: false,
+            msg_delim: MSG_DELIMITER_DEFAULT.to_string(),
+            key_delim: KEY_DELIMITER_DEFAULT.to_string(),
+            msg_count_flush: None,
+            msg_bytes_flush: None,
         }
     }
 }
 
-#[rustfmt::skip]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KafkaProducerConfig {
-    pub brokers:   String,
-    pub group_id:  String,
+    pub auth: KafkaAuthConfig,
+    pub group_id: String,
     pub partition: Option<i32>,
-    pub topic:     String,
+    pub topic: String,
     pub msg_delim: String,
     pub key_delim: String,
-    pub format:    SerdeFormat,
+    pub format: SerdeFormat,
 }
 impl KafkaProducerConfig {
-    pub fn from_matches(matches: &ArgMatches) -> KafkaProducerConfig {
+    pub fn from_matches(
+        matches: &ArgMatches,
+        clusters: Option<&ClustersConfig>,
+    ) -> KafkaProducerConfig {
         let brokers = matches
             .value_of("brokers")
             .expect("Must specify brokers")
@@ -426,7 +462,7 @@ impl KafkaProducerConfig {
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
         KafkaProducerConfig {
-            brokers,
+            auth: ClustersConfig::find_host(clusters, &brokers),
             group_id,
             partition,
             topic,
@@ -438,22 +474,21 @@ impl KafkaProducerConfig {
 }
 
 impl Default for KafkaProducerConfig {
-    #[rustfmt::skip]
     fn default() -> Self {
         KafkaProducerConfig {
-            brokers:   BROKERS_DEFAULT.to_string(),
-            group_id:  GROUP_ID_DEFAULT.to_string(),
+            auth: KafkaAuthConfig::plaintext(BROKERS_DEFAULT),
+            group_id: GROUP_ID_DEFAULT.to_string(),
             partition: None,
-            topic:     "".to_string(),
+            topic: "".to_string(),
             msg_delim: MSG_DELIMITER_DEFAULT.to_string(),
             key_delim: KEY_DELIMITER_DEFAULT.to_string(),
-            format:    SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
+            format: SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ClusterConfig {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KafkaAuthConfig {
     pub name: String,
     pub brokers: Vec<String>,
     #[serde(rename = "SASL")]
@@ -466,12 +501,46 @@ pub struct ClusterConfig {
     #[serde(default)]
     pub version: String,
 }
-#[derive(Serialize, Deserialize)]
-pub struct ClustersConfig {
-    pub clusters: Vec<ClusterConfig>,
+impl KafkaAuthConfig {
+    pub fn plaintext(host: &str) -> Self {
+        Self {
+            name: host.to_owned(),
+            brokers: host.split_whitespace().map(|x| x.to_owned()).collect(),
+            sasl: None,
+            tls: None,
+            security_protocol: "".to_string(),
+            version: "".to_string(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ClustersConfig {
+    pub clusters: Vec<KafkaAuthConfig>,
+}
+impl ClustersConfig {
+    fn from_path_yaml(path: &str) -> std::io::Result<Self> {
+        let file = std::fs::read_to_string(path)?;
+        Ok(serde_yaml::from_str(&file).expect(&format!("Cannot parse config file: {}", path)))
+    }
+
+    fn from_str_yaml(yaml: &str) -> serde_yaml::Result<Self> {
+        serde_yaml::from_str(&yaml)
+    }
+    fn find_host(this: Option<&Self>, host: &str) -> KafkaAuthConfig {
+        match this {
+            Some(this) => this
+                .clusters
+                .iter()
+                .find(|x| x.name == host)
+                .map(|x| x.clone())
+                .unwrap_or_else(|| KafkaAuthConfig::plaintext(host)),
+            None => KafkaAuthConfig::plaintext(host),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TlsConfig {
     #[serde(default)]
     pub cafile: String,
@@ -483,7 +552,7 @@ pub struct TlsConfig {
     pub insecure: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SaslConfig {
     mechanism: String,
     #[serde(default)]
@@ -500,6 +569,7 @@ pub struct SaslConfig {
     #[serde(default)]
     token_url: String,
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,7 +581,7 @@ mod tests {
         assert_eq!(
             config.consumer_kafka.unwrap(),
             KafkaConsumerConfig {
-                brokers: "localhost".to_string(),
+                auth: KafkaAuthConfig::plaintext("localhost"),
                 group_id: "kafcat".to_string(),
                 offset: KafkaOffset::Beginning,
                 partition: None,
@@ -527,7 +597,7 @@ mod tests {
         assert_eq!(
             config.producer_kafka.unwrap(),
             KafkaProducerConfig {
-                brokers: "localhost".to_string(),
+                auth: KafkaAuthConfig::plaintext("localhost"),
                 group_id: "kafcat".to_string(),
                 partition: None,
                 topic: "topic".to_string(),
@@ -554,7 +624,7 @@ mod tests {
         assert_eq!(
             config.consumer_kafka.unwrap(),
             KafkaConsumerConfig {
-                brokers: "localhost1".to_string(),
+                auth: KafkaAuthConfig::plaintext("localhost1"),
                 group_id: "kafcat".to_string(),
                 offset: KafkaOffset::Beginning,
                 partition: None,
@@ -566,7 +636,7 @@ mod tests {
         assert_eq!(
             config.producer_kafka.unwrap(),
             KafkaProducerConfig {
-                brokers: "localhost2".to_string(),
+                auth: KafkaAuthConfig::plaintext("localhost2"),
                 group_id: "kafcat".to_string(),
                 partition: None,
                 topic: "topic2".to_string(),
@@ -579,8 +649,7 @@ mod tests {
             #[test]
             fn $fn_name() {
                 let config = include_str!(concat!("../examples/", stringify!($name), ".yaml"));
-                let config: ClustersConfig =
-                    serde_yaml::from_str(config).expect("Cannot parse config");
+                let config = ClustersConfig::from_str_yaml(config).expect("Cannot parse config");
                 drop(config);
             }
         };
