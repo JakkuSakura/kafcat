@@ -501,6 +501,26 @@ pub struct KafkaAuthConfig {
     #[serde(default)]
     pub version: String,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum SecurityProtocol {
+    Plaintext,
+    SaslPlaintext,
+    Ssl,
+    SaslSsl,
+}
+
+impl SecurityProtocol {
+    pub fn to_string(self) -> &'static str {
+        match self {
+            SecurityProtocol::Plaintext => "plaintext",
+            SecurityProtocol::SaslPlaintext => "sasl_plaintext",
+            SecurityProtocol::Ssl => "ssl",
+            SecurityProtocol::SaslSsl => "sasl_ssl",
+        }
+    }
+}
+
 impl KafkaAuthConfig {
     pub fn plaintext(host: &str) -> Self {
         Self {
@@ -510,6 +530,14 @@ impl KafkaAuthConfig {
             tls: None,
             security_protocol: "".to_string(),
             version: "".to_string(),
+        }
+    }
+    pub fn get_security_protocol(&self) -> SecurityProtocol {
+        match (&self.sasl, &self.tls) {
+            (None, None) => SecurityProtocol::Plaintext,
+            (Some(_sasl), None) => SecurityProtocol::SaslPlaintext,
+            (None, Some(_tls)) => SecurityProtocol::Ssl,
+            (Some(_sasl), Some(_tls)) => SecurityProtocol::SaslSsl,
         }
     }
 }

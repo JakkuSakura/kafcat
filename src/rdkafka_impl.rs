@@ -1,6 +1,6 @@
-use crate::configs::KafkaConsumerConfig;
-use crate::configs::KafkaOffset;
 use crate::configs::KafkaProducerConfig;
+use crate::configs::{KafkaAuthConfig, KafkaConsumerConfig};
+use crate::configs::{KafkaOffset, SecurityProtocol};
 use crate::interface::KafkaConsumer;
 use crate::interface::KafkaInterface;
 use crate::interface::KafkaProducer;
@@ -35,6 +35,31 @@ impl RdkafkaConsumer {
     }
 }
 
+fn config_client(auth: &KafkaAuthConfig) -> ClientConfig {
+    let mut config = ClientConfig::new();
+    config
+        .set(
+            "security.protocol",
+            auth.get_security_protocol().to_string(),
+        )
+        .set("bootstrap.servers", &auth.brokers.join(" "));
+    match auth.get_security_protocol() {
+        SecurityProtocol::Plaintext => {}
+        SecurityProtocol::SaslPlaintext => {
+            unimplemented!("SASL plaintext not implemented")
+        }
+        SecurityProtocol::Ssl => {
+            let tls = auth.tls.as_ref().unwrap();
+            config.set("ssl.ca.location", &tls.cafile);
+            config.set("ssl.certificate.location", &tls.clientfile);
+            config.set("ssl.key.location", &tls.clientkeyfile);
+        }
+        SecurityProtocol::SaslSsl => {
+            unimplemented!("SASL SSL not implemented")
+        }
+    }
+    config
+}
 #[async_trait]
 impl KafkaConsumer for RdkafkaConsumer {
     async fn from_config(config: KafkaConsumerConfig) -> Self
@@ -42,9 +67,8 @@ impl KafkaConsumer for RdkafkaConsumer {
         Self: Sized,
     {
         // TODO enable SSL and SASL
-        let stream: StreamConsumer = ClientConfig::new()
+        let stream: StreamConsumer = config_client(&config.auth)
             .set("group.id", &config.group_id)
-            .set("bootstrap.servers", &config.auth.brokers.join(" "))
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "false")
@@ -126,20 +150,17 @@ pub struct RdkafkaProducer {
 
 #[async_trait]
 impl KafkaProducer for RdkafkaProducer {
-    async fn from_config(kafka_config: KafkaProducerConfig) -> Self
+    async fn from_config(config: KafkaProducerConfig) -> Self
     where
         Self: Sized,
     {
         // TODO enable SSL and SASL
-        let producer = ClientConfig::new()
-            .set("bootstrap.servers", &kafka_config.auth.brokers.join(" "))
+        let producer = config_client(&config.auth)
+            .set("bootstrap.servers", &config.auth.brokers.join(" "))
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error");
-        RdkafkaProducer {
-            producer,
-            config: kafka_config,
-        }
+        RdkafkaProducer { producer, config }
     }
 
     async fn write_one(&self, msg: KafkaMessage) -> Result<()> {
