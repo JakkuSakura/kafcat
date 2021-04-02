@@ -34,7 +34,7 @@ Kafcat is still on early development, so
    cargo build --release
    ```
 
-2. Make sure Kafka is running (We assume at `localhost:9092`). You can use`docker-compose -f tests/plain-text-server.yml up`(note that kafka in docker on MacOS is problematic, I couldn't even setup the proper testing environment via docker)
+2. Make sure Kafka is running (We assume at `localhost:9092`). You can use`docker-compose -f tests/plaintext-server.yml up`(note that kafka in docker on MacOS is problematic, I couldn't even setup the proper testing environment via docker)
 
 3. Setup the listener, assuming `kafcat` is in current directory
 

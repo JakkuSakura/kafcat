@@ -11,7 +11,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - name: Basic test
-        run: |
-          cargo build --verbose
-          cargo test --all --verbose
+
+      - name: Build kafcat
+        run: cargo build --verbose
+
+      - name: Start plaintext kafka server
+        run: docker-compose -f tests/plaintext-server.yml up -d
+
+      - name: Test all
+        run: cargo test --all --verbose -- --show-output
