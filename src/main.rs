@@ -5,8 +5,7 @@ extern crate log;
 pub mod modes;
 use modes::*;
 
-use kafcat::configs::AppConfig;
-use kafcat::configs::WorkingMode;
+use kafcat::configs::{AppConfig, WorkingMode};
 use kafcat::error::KafcatError;
 use kafcat::rdkafka_impl::RdKafka;
 use kafcat::setup_logger;

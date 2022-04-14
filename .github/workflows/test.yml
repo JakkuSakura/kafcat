@@ -12,6 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Run clippy
+        run: cargo clippy --all-targets
+
+      - name: Run rustfmt
+        run: cargo fmt --all --check 
+
       - name: Build kafcat
         run: cargo build --verbose
 
