@@ -1,8 +1,7 @@
 use clap::crate_version;
-use clap::App;
-use clap::AppSettings;
 use clap::Arg;
 use clap::ArgMatches;
+use clap::Command;
 use log::LevelFilter;
 use regex::Regex;
 use serde::Deserialize;
@@ -23,7 +22,7 @@ pub fn group_id() -> Arg<'static> {
     Arg::new("group-id")
         .short('G')
         .long("group-id")
-        .about("Consumer group id. (Kafka >=0.9 balanced consumer groups)")
+        .help("Consumer group id. (Kafka >=0.9 balanced consumer groups)")
         .default_value(GROUP_ID_DEFAULT)
 }
 
@@ -32,7 +31,7 @@ pub fn offset() -> Arg<'static> {
         .short('o')
         .takes_value(true)
         .default_value(r#"beginning"#)
-        .long_about(
+        .help(
             r#"Offset to start consuming from:
                      beginning | end | stored |
                      <value>  (absolute offset) |
@@ -46,7 +45,7 @@ pub fn topic() -> Arg<'static> {
     Arg::new("topic")
         .short('t')
         .long("topic")
-        .about("Topic")
+        .help("Topic")
         .takes_value(true)
 }
 
@@ -54,7 +53,7 @@ pub fn brokers() -> Arg<'static> {
     Arg::new("brokers")
         .short('b')
         .long("brokers")
-        .about(
+        .help(
             "Broker list. This could also be a cluster name in a config file specified by \
          --config conf.yaml (default ~/.kaf/config)",
         )
@@ -66,7 +65,7 @@ pub fn config() -> Arg<'static> {
         .short('F')
         .long("config-file")
         .default_value("~/.kaf/config")
-        .about(
+        .help(
             "Specify the config file path. The config file should be in yaml/properties format.\
         If it's yaml, the config is used to pick up a cluster, and you have to specify a broker. \
         When it's properties file, there is no need to specify a broker",
@@ -76,21 +75,21 @@ pub fn config() -> Arg<'static> {
 pub fn extra_config() -> Arg<'static> {
     Arg::new("extra-config")
         .short('X')
-        .about(
+        .help(
             "configs that are passed to librdkafka directly. Format: -X key1=val1 -X key2=val2. \
         For copy subcommand: 1) Set different pairs for producer and consumer via: \
         ./kafcat --cp -X key1=val1 <from> -- -X key2=val2 <to>; 2) Set the same pairs for producer \
         and consumer via: ./kafcat -X key1=val1 -X key2=val2 --cp <from> -- <to>",
         )
         .takes_value(true)
-        .multiple(true)
+        .multiple_occurrences(true)
 }
 
 pub fn partition() -> Arg<'static> {
     Arg::new("partition")
         .short('p')
         .long("partition")
-        .about("Partition")
+        .help("Partition")
         .takes_value(true)
 }
 
@@ -98,47 +97,47 @@ pub fn exit() -> Arg<'static> {
     Arg::new("exit")
         .short('e')
         .long("exit")
-        .about("Exit successfully when last message received")
+        .help("Exit successfully when last message received")
 }
 
 pub fn format() -> Arg<'static> {
     Arg::new("format")
         .short('s')
         .long("format")
-        .about("Serialize/Deserialize format")
+        .help("Serialize/Deserialize format")
         .default_value(FORMAT_DEFAULT)
 }
 
 pub fn flush_count() -> Arg<'static> {
     Arg::new("flush-count")
         .long("flush-count")
-        .about("Number of messages to receive before flushing stdout")
+        .help("Number of messages to receive before flushing stdout")
         .takes_value(true)
 }
 
 pub fn flush_bytes() -> Arg<'static> {
     Arg::new("flush-bytes")
         .long("flush-bytes")
-        .about("Size of messages in bytes accumulated before flushing to stdout")
+        .help("Size of messages in bytes accumulated before flushing to stdout")
         .takes_value(true)
 }
 
 pub fn msg_delimiter() -> Arg<'static> {
     Arg::new("msg-delimiter")
         .short('D')
-        .about("Delimiter to split input into messages(currently only supports '\\n')")
+        .help("Delimiter to split input into messages(currently only supports '\\n')")
         .default_value(MSG_DELIMITER_DEFAULT)
 }
 
 pub fn key_delimiter() -> Arg<'static> {
     Arg::new("key-delimiter")
         .short('K')
-        .about("Delimiter to split input key and message")
+        .help("Delimiter to split input key and message")
         .default_value(KEY_DELIMITER_DEFAULT)
 }
 
-pub fn consume_subcommand() -> App<'static> {
-    App::new("consume").short_flag('C').args(vec![
+pub fn consume_subcommand() -> Command<'static> {
+    Command::new("consume").short_flag('C').args(vec![
         brokers(),
         group_id(),
         topic().required(true),
@@ -155,8 +154,8 @@ pub fn consume_subcommand() -> App<'static> {
     ])
 }
 
-pub fn produce_subcommand() -> App<'static> {
-    App::new("produce").short_flag('P').args(vec![
+pub fn produce_subcommand() -> Command<'static> {
+    Command::new("produce").short_flag('P').args(vec![
         brokers(),
         group_id(),
         topic().required(true),
@@ -169,13 +168,18 @@ pub fn produce_subcommand() -> App<'static> {
     ])
 }
 
-pub fn copy_subcommand() -> App<'static> {
+pub fn copy_subcommand() -> Command<'static> {
     // this is not meant to be used directly only for help message
-    App::new("copy")
-        .setting(AppSettings::AllowLeadingHyphen)
+    Command::new("copy")
+        .allow_hyphen_values(true)
         .alias("--cp")
-        .arg(Arg::new("from").multiple(true).required(true))
-        .arg(Arg::new("to").multiple(true).last(true).required(true))
+        .arg(Arg::new("from").multiple_occurrences(true).required(true))
+        .arg(
+            Arg::new("to")
+                .multiple_occurrences(true)
+                .last(true)
+                .required(true),
+        )
         .about(
             "Copy mode accepts two parts of arguments <from> and <to>, the two parts are \
         separated by [--]. <from> is the exact as Consumer mode, and <to> is the exact as Producer \
@@ -183,8 +187,8 @@ pub fn copy_subcommand() -> App<'static> {
         )
 }
 
-pub fn get_arg_matcher() -> App<'static> {
-    App::new("kafcat")
+pub fn get_arg_matcher() -> Command<'static> {
+    Command::new("kafcat")
         .version(crate_version!())
         .author("Jiangkun Qiu <qiujiangkun@foxmail.com>")
         .about("cat but kafka")
@@ -193,13 +197,13 @@ pub fn get_arg_matcher() -> App<'static> {
             produce_subcommand(),
             copy_subcommand(),
         ])
-        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand_required(true)
         .arg(config())
         .arg(extra_config())
         .arg(
             Arg::new("log")
                 .long("log")
-                .about("Configure level of logging")
+                .help("Configure level of logging")
                 .takes_value(true)
                 // See https://docs.rs/env_logger/0.8.3/env_logger/#enabling-logging
                 .possible_values(&["error", "warn", "info", "debug", "trace"]),
@@ -320,7 +324,7 @@ impl AppConfig {
         let kafcat_log_env = std::env::var("KAFCAT_LOG").ok();
         let log_level = matches
             .value_of("log")
-            .or_else(|| kafcat_log_env.as_deref())
+            .or(kafcat_log_env.as_deref())
             .map(|x| LevelFilter::from_str(x).expect("Cannot parse log level"))
             .unwrap_or(LevelFilter::Info);
 
@@ -570,19 +574,22 @@ pub struct ClustersConfig {
 impl ClustersConfig {
     fn from_path_yaml(path: &str) -> std::io::Result<Self> {
         let file = std::fs::read_to_string(path)?;
-        Ok(serde_yaml::from_str(&file).expect(&format!("Cannot parse config file: {}", path)))
+        Ok(serde_yaml::from_str(&file)
+            .unwrap_or_else(|_| panic!("Cannot parse config file: {}", path)))
     }
 
+    #[cfg(test)]
     fn from_str_yaml(yaml: &str) -> serde_yaml::Result<Self> {
-        serde_yaml::from_str(&yaml)
+        serde_yaml::from_str(yaml)
     }
+
     fn find_host(this: Option<&Self>, host: &str) -> KafkaAuthConfig {
         match this {
             Some(this) => this
                 .clusters
                 .iter()
                 .find(|x| x.name == host)
-                .map(|x| x.clone())
+                .cloned()
                 .unwrap_or_else(|| KafkaAuthConfig::plaintext(host)),
             None => KafkaAuthConfig::plaintext(host),
         }
