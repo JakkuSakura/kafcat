@@ -1,8 +1,6 @@
 pub mod coder;
 pub mod configs;
-pub mod connection;
 pub mod error;
-pub mod input;
 pub mod interface;
 pub mod message;
 pub mod output;

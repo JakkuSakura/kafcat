@@ -104,7 +104,7 @@ pub fn format() -> Arg<'static> {
     Arg::new("format")
         .short('s')
         .long("format")
-        .help("Serialize/Deserialize format")
+        .help("Serialize/Deserialize format. Supported formats: json, text.")
         .default_value(FORMAT_DEFAULT)
 }
 
@@ -219,30 +219,6 @@ pub enum WorkingMode {
     Metadata,
     Query,
     Copy,
-}
-
-impl WorkingMode {
-    pub fn should_have_input_kafka(self) -> bool {
-        match self {
-            WorkingMode::Unspecified => false,
-            WorkingMode::Consumer => true,
-            WorkingMode::Producer => false,
-            WorkingMode::Metadata => true,
-            WorkingMode::Query => true,
-            WorkingMode::Copy => true,
-        }
-    }
-
-    pub fn should_have_output_kafka(self) -> bool {
-        match self {
-            WorkingMode::Unspecified => false,
-            WorkingMode::Consumer => false,
-            WorkingMode::Producer => true,
-            WorkingMode::Metadata => false,
-            WorkingMode::Query => false,
-            WorkingMode::Copy => true,
-        }
-    }
 }
 
 impl Default for WorkingMode {
