@@ -1,0 +1,10 @@
+producer_jobs:
+- 
+  topic_name: example_topic_1
+  file: ./tests/testdata/example_topic_1
+  partitions: 1
+  format: Json
+- 
+  topic_name: example_topic_2
+  file: ./tests/testdata/example_topic_2
+  format: Json

@@ -2,6 +2,7 @@ pub mod coder;
 pub mod configs;
 pub mod error;
 pub mod interface;
+pub mod jobs;
 pub mod message;
 pub mod output;
 pub mod rdkafka_impl;

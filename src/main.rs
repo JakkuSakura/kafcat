@@ -25,6 +25,9 @@ async fn main() -> Result<(), KafcatError> {
         WorkingMode::Metadata => {}
         WorkingMode::Query => {}
         WorkingMode::Copy => run_async_copy_topic(interface, config).await?,
+        WorkingMode::Execute => {
+            config.executor_config.unwrap().run().await;
+        }
         _ => {}
     }
     Ok(())

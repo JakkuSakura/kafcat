@@ -4,15 +4,19 @@ use clap::ArgMatches;
 use clap::Command;
 use log::LevelFilter;
 use regex::Regex;
+use serde::de::Error;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::str::FromStr;
 use strum::Display;
 use strum::EnumString;
 
+use crate::jobs::JobsConfig;
+
 const GROUP_ID_DEFAULT: &str = "kafcat";
-const BROKERS_DEFAULT: &str = "localhost:9092";
+const BROKERS_DEFAULT: &str = "127.0.0.1:9092";
 const MSG_DELIMITER_DEFAULT: &str = "\n";
 const KEY_DELIMITER_DEFAULT: &str = ":";
 const OFFSET_DEFAULT: &str = "beginning";
@@ -168,6 +172,16 @@ pub fn produce_subcommand() -> Command<'static> {
     ])
 }
 
+pub fn execute_subcommand() -> Command<'static> {
+    Command::new("execute").short_flag('E').args(vec![
+        brokers(),
+        Arg::new("jobs-config")
+            .last(true)
+            .required(true)
+            .help("The jobs to execute."),
+    ])
+}
+
 pub fn copy_subcommand() -> Command<'static> {
     // this is not meant to be used directly only for help message
     Command::new("copy")
@@ -196,6 +210,7 @@ pub fn get_arg_matcher() -> Command<'static> {
             consume_subcommand(),
             produce_subcommand(),
             copy_subcommand(),
+            execute_subcommand(),
         ])
         .subcommand_required(true)
         .arg(config())
@@ -219,6 +234,7 @@ pub enum WorkingMode {
     Metadata,
     Query,
     Copy,
+    Execute,
 }
 
 impl Default for WorkingMode {
@@ -285,11 +301,22 @@ impl FromStr for SerdeFormat {
     }
 }
 
+impl<'de> Deserialize<'de> for SerdeFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?.to_lowercase();
+        Self::from_str(&s).map_err(D::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub working_mode: WorkingMode,
     pub consumer_kafka: Option<KafkaConsumerConfig>,
     pub producer_kafka: Option<KafkaProducerConfig>,
+    pub executor_config: Option<ExecutorConfig>,
     pub log_level: LevelFilter,
 }
 
@@ -312,6 +339,7 @@ impl AppConfig {
             working_mode: WorkingMode::Unspecified,
             consumer_kafka: None,
             producer_kafka: None,
+            executor_config: None,
             log_level,
         };
         match matches.subcommand() {
@@ -349,6 +377,19 @@ impl AppConfig {
                     clusters_config.as_ref().ok(),
                 ));
             }
+            Some(("execute", matches)) => {
+                this.working_mode = WorkingMode::Execute;
+                let brokers = matches
+                    .value_of("brokers")
+                    .expect("Must specify brokers")
+                    .to_owned();
+                let auth = ClustersConfig::find_host(clusters_config.as_ref().ok(), &brokers);
+                let jobs_config_file = matches
+                    .value_of("jobs-config")
+                    .expect("Must specify --jobs-config");
+                let jobs_config = JobsConfig::from_config_file(jobs_config_file);
+                this.executor_config = Some(ExecutorConfig { auth, jobs_config })
+            }
             _ => unreachable!(),
         }
 
@@ -356,6 +397,7 @@ impl AppConfig {
     }
 }
 
+/// The arguments of subcommand `./kafcat consume`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KafkaConsumerConfig {
     pub auth: KafkaAuthConfig,
@@ -432,6 +474,7 @@ impl Default for KafkaConsumerConfig {
     }
 }
 
+/// The config of subcommand `./kafcat produce`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KafkaProducerConfig {
     pub auth: KafkaAuthConfig,
@@ -442,6 +485,7 @@ pub struct KafkaProducerConfig {
     pub key_delim: String,
     pub format: SerdeFormat,
 }
+
 impl KafkaProducerConfig {
     pub fn from_matches(
         matches: &ArgMatches,
@@ -462,6 +506,7 @@ impl KafkaProducerConfig {
         let msg_delim = matches.value_of("msg-delimiter").unwrap().to_owned();
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
+
         KafkaProducerConfig {
             auth: ClustersConfig::find_host(clusters, &brokers),
             group_id,
@@ -485,6 +530,19 @@ impl Default for KafkaProducerConfig {
             key_delim: KEY_DELIMITER_DEFAULT.to_string(),
             format: SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
         }
+    }
+}
+
+/// The config of subcommand `./kafcat execute`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutorConfig {
+    auth: KafkaAuthConfig,
+    jobs_config: JobsConfig,
+}
+
+impl ExecutorConfig {
+    pub async fn run(&self) {
+        self.jobs_config.run(&self.auth).await;
     }
 }
 
@@ -623,6 +681,7 @@ mod tests {
             }
         )
     }
+
     #[test]
     fn producer_config() {
         let config = AppConfig::from_args(vec!["kafcat", "-P", "-b", "localhost", "-t", "topic"]);
@@ -637,6 +696,7 @@ mod tests {
             }
         )
     }
+
     #[test]
     fn copy_config() {
         let config = AppConfig::from_args(vec![
@@ -693,4 +753,13 @@ mod tests {
     test_read_clusters_config!(test_read_config_sasl_ssl_insecure, sasl_ssl_insecure);
     test_read_clusters_config!(test_read_config_sasl_ssl_scram, sasl_ssl_scram);
     test_read_clusters_config!(test_read_config_ssl_keys, ssl_keys);
+
+    #[test]
+    fn serde_format_deserialize() {
+        let format: SerdeFormat = serde_json::from_str("\"Json\"").unwrap();
+        assert_eq!(format, SerdeFormat::Json);
+
+        let format: SerdeFormat = serde_json::from_str("\"json\"").unwrap();
+        assert_eq!(format, SerdeFormat::Json);
+    }
 }
