@@ -106,7 +106,8 @@ pub fn format() -> Arg<'static> {
         .long("format")
         .help(
             "Serialize/Deserialize format. Supported formats: json, text. \
-        If not specified, it simply use every lines as the payload. Key of message will be null.",
+        If not specified, it simply uses every lines as the payload. \
+        The Key of every message will be null.",
         )
         .default_value(FORMAT_DEFAULT)
 }
