@@ -1,13 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use kafka::client::KafkaClient;
 use serde::Deserialize;
 
 use crate::{
     configs::{KafkaAuthConfig, KafkaProducerConfig, SerdeFormat},
     interface::KafkaProducer,
     message::KafkaMessage,
-    rdkafka_impl::{RdKafkaAdmin, RdkafkaProducer},
+    rdkafka_impl::RdkafkaProducer,
 };
 
 /// Defines the producer job to dump the specified file to kafka.
@@ -40,7 +39,7 @@ impl ProducerJob {
         let producer = RdkafkaProducer::from_config(cfg.clone()).await;
 
         let absolute_path = std::fs::canonicalize(&self.file).unwrap();
-        println!("{}", absolute_path.to_string_lossy());
+        info!("Processing {}", absolute_path.to_string_lossy());
 
         let content = std::fs::read_to_string(&absolute_path)
             .unwrap_or_else(|e| panic!("Cannot read data file {}: {}", self.file, e));
@@ -74,32 +73,6 @@ impl JobsConfig {
     }
 
     pub async fn run(&self, auth: &KafkaAuthConfig) {
-        let mut client = KafkaClient::new(auth.brokers.clone());
-        client
-            .load_metadata_all()
-            .unwrap_or_else(|e| panic!("Failed to load kafka metadata: {}", e));
-
-        // The pure-rust kafka client doesn't support `CreateTopic` API.
-        let admin_client = RdKafkaAdmin::create(auth);
-
-        let topics = client
-            .topics()
-            .iter()
-            .map(|t| t.name().to_string())
-            .collect::<HashSet<String>>();
-
-        let non_existed_topics = self
-            .producer_jobs
-            .iter()
-            .filter(|j| topics.get(&j.topic_name).is_none())
-            .collect::<Vec<&ProducerJob>>();
-
-        for job in non_existed_topics {
-            admin_client
-                .create_topic(&job.topic_name, job.partitions)
-                .await;
-        }
-
         for job in &self.producer_jobs {
             job.run(auth).await;
         }

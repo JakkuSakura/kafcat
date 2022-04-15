@@ -6,8 +6,6 @@ use crate::interface::KafkaInterface;
 use crate::interface::KafkaProducer;
 use crate::message::KafkaMessage;
 use crate::Result;
-use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
-use rdkafka::client::DefaultClientContext;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
@@ -180,34 +178,5 @@ impl KafkaProducer for RdkafkaProducer {
             .await
             .map_err(|(err, _msg)| anyhow::Error::from(err))?;
         Ok(())
-    }
-}
-
-/// The admin client to kafka.
-pub struct RdKafkaAdmin {
-    admin_client: AdminClient<DefaultClientContext>,
-}
-
-impl RdKafkaAdmin {
-    pub fn create(auth: &KafkaAuthConfig) -> Self {
-        let admin_client = config_client(auth)
-            .set("message.timeout.ms", "5000")
-            .create()
-            .expect("AdminClient creation error");
-
-        Self { admin_client }
-    }
-
-    pub async fn create_topic(&self, name: &str, num_partitions: i32) {
-        let topics = vec![NewTopic {
-            name,
-            num_partitions,
-            replication: TopicReplication::Fixed(1),
-            config: vec![],
-        }];
-        self.admin_client
-            .create_topics(topics.iter(), &AdminOptions::default())
-            .await
-            .unwrap_or_else(|e| panic!("Faield to create topic {}: {}", name, e));
     }
 }

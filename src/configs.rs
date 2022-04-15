@@ -178,7 +178,7 @@ pub fn execute_subcommand() -> Command<'static> {
         Arg::new("jobs-config")
             .last(true)
             .required(true)
-            .help("The jobs to execute."),
+            .help("The config file that specifies the jobs to execute."),
     ])
 }
 
@@ -386,7 +386,7 @@ impl AppConfig {
                 let auth = ClustersConfig::find_host(clusters_config.as_ref().ok(), &brokers);
                 let jobs_config_file = matches
                     .value_of("jobs-config")
-                    .expect("Must specify --jobs-config");
+                    .expect("Must specify jobs-config");
                 let jobs_config = JobsConfig::from_config_file(jobs_config_file);
                 this.executor_config = Some(ExecutorConfig { auth, jobs_config })
             }
@@ -397,7 +397,6 @@ impl AppConfig {
     }
 }
 
-/// The arguments of subcommand `./kafcat consume`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KafkaConsumerConfig {
     pub auth: KafkaAuthConfig,
@@ -474,7 +473,6 @@ impl Default for KafkaConsumerConfig {
     }
 }
 
-/// The config of subcommand `./kafcat produce`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KafkaProducerConfig {
     pub auth: KafkaAuthConfig,
@@ -533,7 +531,6 @@ impl Default for KafkaProducerConfig {
     }
 }
 
-/// The config of subcommand `./kafcat execute`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutorConfig {
     auth: KafkaAuthConfig,
