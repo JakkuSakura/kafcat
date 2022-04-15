@@ -31,6 +31,9 @@ pub async fn run_async_consume_topic<Interface: KafkaInterface>(
             Ok(Ok(msg)) => {
                 log::trace!("Received message:\n{:#?}", msg);
                 match input_config.format {
+                    SerdeFormat::None => {
+                        bytes_read += stdout.write(&msg.payload).await?;
+                    }
                     SerdeFormat::Text => {
                         bytes_read += stdout.write(&msg.key).await?;
                         bytes_read += stdout.write(input_config.key_delim.as_bytes()).await?;

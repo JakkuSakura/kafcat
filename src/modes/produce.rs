@@ -6,6 +6,37 @@ use kafcat::interface::KafkaProducer;
 use kafcat::message::KafkaMessage;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
+use tokio::io::Lines;
+
+enum Messages {
+    File(Lines<BufReader<tokio::fs::File>>),
+    Stdin(Lines<BufReader<tokio::io::Stdin>>),
+}
+
+impl Messages {
+    async fn new(data_file: &Option<String>) -> Messages {
+        match data_file {
+            Some(data_file) => {
+                info!("Reading from file: {}", data_file);
+                let file = tokio::fs::File::open(data_file)
+                    .await
+                    .unwrap_or_else(|e| panic!("Failed to load data file {}: {}", data_file, e));
+                Messages::File(BufReader::new(file).lines())
+            }
+            None => {
+                info!("Reading from stdin");
+                Messages::Stdin(BufReader::new(tokio::io::stdin()).lines())
+            }
+        }
+    }
+
+    async fn next(&mut self) -> std::io::Result<Option<String>> {
+        match self {
+            Messages::File(lines) => lines.next_line().await,
+            Messages::Stdin(lines) => lines.next_line().await,
+        }
+    }
+}
 
 pub async fn run_async_produce_topic<Interface: KafkaInterface>(
     _interface: Interface,
@@ -16,13 +47,24 @@ pub async fn run_async_produce_topic<Interface: KafkaInterface>(
         .expect("Must specify output kafka config");
     let producer: Interface::Producer =
         Interface::Producer::from_config(producer_config.clone()).await;
-    let reader = BufReader::new(tokio::io::stdin());
-    let mut lines = reader.lines();
+
+    let mut messages = Messages::new(&producer_config.data_file).await;
     let key_delim = producer_config.key_delim;
 
     match producer_config.format {
+        SerdeFormat::None => {
+            while let Some(line) = messages.next().await? {
+                let msg = KafkaMessage {
+                    key: "".as_bytes().to_vec(),
+                    payload: line.as_bytes().to_vec(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                    headers: Default::default(),
+                };
+                producer.write_one(msg).await?;
+            }
+        }
         SerdeFormat::Text => {
-            while let Some(line) = lines.next_line().await? {
+            while let Some(line) = messages.next().await? {
                 if let Some(index) = line.find(&key_delim) {
                     let key = &line[..index];
                     let payload = &line[index + key_delim.len()..];
@@ -39,7 +81,7 @@ pub async fn run_async_produce_topic<Interface: KafkaInterface>(
             }
         }
         SerdeFormat::Json => {
-            while let Some(line) = lines.next_line().await? {
+            while let Some(line) = messages.next().await? {
                 match serde_json::from_str(&line) {
                     Ok(msg) => producer.write_one(msg).await?,
                     Err(err) => {

@@ -16,7 +16,7 @@ const BROKERS_DEFAULT: &str = "localhost:9092";
 const MSG_DELIMITER_DEFAULT: &str = "\n";
 const KEY_DELIMITER_DEFAULT: &str = ":";
 const OFFSET_DEFAULT: &str = "beginning";
-const FORMAT_DEFAULT: &str = "text";
+const FORMAT_DEFAULT: &str = "";
 
 pub fn group_id() -> Arg<'static> {
     Arg::new("group-id")
@@ -104,7 +104,10 @@ pub fn format() -> Arg<'static> {
     Arg::new("format")
         .short('s')
         .long("format")
-        .help("Serialize/Deserialize format. Supported formats: json, text.")
+        .help(
+            "Serialize/Deserialize format. Supported formats: json, text. \
+        If not specified, it simply use every lines as the payload. Key of message will be null.",
+        )
         .default_value(FORMAT_DEFAULT)
 }
 
@@ -165,6 +168,9 @@ pub fn produce_subcommand() -> Command<'static> {
         format(),
         config(),
         extra_config(),
+        Arg::new("file")
+            .help("Read messages from files.")
+            .last(true),
     ])
 }
 
@@ -268,6 +274,7 @@ impl FromStr for KafkaOffset {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SerdeFormat {
+    None,
     Text,
     Json,
     Regex(String),
@@ -278,6 +285,7 @@ impl FromStr for SerdeFormat {
 
     fn from_str(value: &str) -> Result<Self, String> {
         Ok(match value {
+            "" => SerdeFormat::None,
             "text" => SerdeFormat::Text,
             "json" => SerdeFormat::Json,
             _ => SerdeFormat::Regex(value.to_owned()),
@@ -441,7 +449,9 @@ pub struct KafkaProducerConfig {
     pub msg_delim: String,
     pub key_delim: String,
     pub format: SerdeFormat,
+    pub data_file: Option<String>,
 }
+
 impl KafkaProducerConfig {
     pub fn from_matches(
         matches: &ArgMatches,
@@ -462,6 +472,7 @@ impl KafkaProducerConfig {
         let msg_delim = matches.value_of("msg-delimiter").unwrap().to_owned();
         let key_delim = matches.value_of("key-delimiter").unwrap().to_owned();
         let format = matches.value_of("format").expect("Must specify format");
+        let data_file = matches.value_of("file").map(|s| s.to_string());
         KafkaProducerConfig {
             auth: ClustersConfig::find_host(clusters, &brokers),
             group_id,
@@ -470,6 +481,7 @@ impl KafkaProducerConfig {
             msg_delim,
             key_delim,
             format: SerdeFormat::from_str(format).unwrap(),
+            data_file,
         }
     }
 }
@@ -484,6 +496,7 @@ impl Default for KafkaProducerConfig {
             msg_delim: MSG_DELIMITER_DEFAULT.to_string(),
             key_delim: KEY_DELIMITER_DEFAULT.to_string(),
             format: SerdeFormat::from_str(FORMAT_DEFAULT).unwrap(),
+            data_file: None,
         }
     }
 }
