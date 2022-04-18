@@ -43,7 +43,9 @@ jobs:
         run: cargo build --verbose
 
       - name: Start plaintext kafka server
+        if: matrix.os == 'ubuntu-latest'
         run: docker-compose -f tests/plaintext-server.yml up -d
 
       - name: Test all
+        if: matrix.os == 'ubuntu-latest'
         run: cargo test --all --verbose -- --show-output
