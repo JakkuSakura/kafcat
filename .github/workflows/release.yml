@@ -11,6 +11,11 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-musl, x86_64-apple-darwin]
     steps:
+      - name: Install packages (macOS)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          brew install openssl
+
       - uses: actions/checkout@master
       - name: Compile and release
         uses: rust-build/rust-build.action@latest
