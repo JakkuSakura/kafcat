@@ -28,10 +28,10 @@ Kafcat is still on early development, so
 
 ## Basic Usage
 
-1. Compile kafcat. You can find the binary at target/release/kafcat
+1. Compile and install kafcat.
 
    ```bash
-   cargo build --release
+   cargo install kafcat
    ```
 
 2. Make sure Kafka is running (We assume at `localhost:9092`). You can use`docker-compose -f tests/plaintext-server.yml up`(note that kafka in docker on MacOS is problematic, I couldn't even setup the proper testing environment via docker)
