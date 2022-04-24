@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rdkafka = "0.28"
+rdkafka = { version = "0.28", features = ["ssl-vendored"] }
 kafka = "0.8.0"
 clap = { version = "3", features = ["cargo"] }
 log = "0.4.14"
@@ -36,5 +36,3 @@ shellexpand = "2.1"
 
 [dev-dependencies]
 assert_cmd = "2"
-
-
