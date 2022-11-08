@@ -10,12 +10,14 @@ use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
+use rdkafka::message::{Headers, OwnedHeaders, Header};
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
 use rdkafka::ClientConfig;
 use rdkafka::Message;
 use rdkafka::Offset;
 use rdkafka::TopicPartitionList;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::task::block_in_place;
 
@@ -132,11 +134,25 @@ impl KafkaConsumer for RdkafkaConsumer {
         match locker.recv().await {
             Ok(x) => {
                 let msg = x.detach();
+                let headers = match msg.headers() {
+                    Some(headers) => {
+                      let mut res = HashMap::with_capacity(headers.count());
+                      for i in 0..headers.count() {
+                        let header = headers.get(i);
+                        res.insert(header.key.to_owned(), match header.value {
+                            Some(value) => value.to_owned(),
+                            None => vec![],
+                        });
+                      }
+                      res
+                    },
+                    None => HashMap::new(),
+                };
                 Ok(KafkaMessage {
                     key: msg.key().map(Vec::from).unwrap_or_default(),
                     payload: msg.payload().map(Vec::from).unwrap_or_default(),
                     timestamp: msg.timestamp().to_millis().unwrap(),
-                    ..KafkaMessage::default() // TODO headers
+                    headers,
                 })
             }
             Err(err) => Err(anyhow::Error::from(err).into()),
@@ -172,6 +188,14 @@ impl KafkaProducer for RdkafkaProducer {
         let payload = msg.payload;
         if !payload.is_empty() {
             record = record.payload(&payload)
+        }
+        let headers = msg.headers;
+        if !headers.is_empty() {
+            let mut owned_headers = OwnedHeaders::new();
+            for (k, v) in headers.iter() {
+                owned_headers = owned_headers.insert(Header { key: k.as_str(), value: Some(v) });
+            }
+            record.headers = Some(owned_headers);
         }
         self.producer
             .send(record, Duration::from_secs(0))

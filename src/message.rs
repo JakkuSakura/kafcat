@@ -8,5 +8,5 @@ pub struct KafkaMessage {
     pub key:       Vec<u8>,
     pub payload:   Vec<u8>,
     pub timestamp: i64,
-    pub headers:   HashMap<String, String>,
+    pub headers:   HashMap<String, Vec<u8>>,
 }
