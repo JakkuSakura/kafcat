@@ -10,7 +10,7 @@ use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::Consumer;
 use rdkafka::consumer::StreamConsumer;
 use rdkafka::error::KafkaResult;
-use rdkafka::message::{Headers, OwnedHeaders, Header};
+use rdkafka::message::{Header, Headers, OwnedHeaders};
 use rdkafka::producer::FutureProducer;
 use rdkafka::producer::FutureRecord;
 use rdkafka::ClientConfig;
@@ -136,16 +136,19 @@ impl KafkaConsumer for RdkafkaConsumer {
                 let msg = x.detach();
                 let headers = match msg.headers() {
                     Some(headers) => {
-                      let mut res = HashMap::with_capacity(headers.count());
-                      for i in 0..headers.count() {
-                        let header = headers.get(i);
-                        res.insert(header.key.to_owned(), match header.value {
-                            Some(value) => value.to_owned(),
-                            None => vec![],
-                        });
-                      }
-                      res
-                    },
+                        let mut res = HashMap::with_capacity(headers.count());
+                        for i in 0..headers.count() {
+                            let header = headers.get(i);
+                            res.insert(
+                                header.key.to_owned(),
+                                match header.value {
+                                    Some(value) => value.to_owned(),
+                                    None => vec![],
+                                },
+                            );
+                        }
+                        res
+                    }
                     None => HashMap::new(),
                 };
                 Ok(KafkaMessage {
@@ -193,7 +196,10 @@ impl KafkaProducer for RdkafkaProducer {
         if !headers.is_empty() {
             let mut owned_headers = OwnedHeaders::new();
             for (k, v) in headers.iter() {
-                owned_headers = owned_headers.insert(Header { key: k.as_str(), value: Some(v) });
+                owned_headers = owned_headers.insert(Header {
+                    key: k.as_str(),
+                    value: Some(v),
+                });
             }
             record.headers = Some(owned_headers);
         }
